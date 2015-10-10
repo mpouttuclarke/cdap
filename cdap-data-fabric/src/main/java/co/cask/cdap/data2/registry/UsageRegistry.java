@@ -18,7 +18,7 @@ package co.cask.cdap.data2.registry;
 
 import co.cask.cdap.api.dataset.DatasetProperties;
 import co.cask.cdap.api.dataset.table.Table;
-import co.cask.cdap.data2.datafabric.dataset.DatasetsUtil;
+import co.cask.cdap.data2.datafabric.dataset.DatasetProvider;
 import co.cask.cdap.data2.dataset2.DatasetFramework;
 import co.cask.cdap.data2.dataset2.DatasetManagementException;
 import co.cask.cdap.data2.dataset2.tx.Transactional;
@@ -52,14 +52,14 @@ public class UsageRegistry {
   private final Transactional<UsageDatasetIterable, UsageDataset> txnl;
 
   @Inject
-  public UsageRegistry(TransactionExecutorFactory txExecutorFactory, final DatasetFramework datasetFramework) {
+  public UsageRegistry(TransactionExecutorFactory txExecutorFactory,
+                       final DatasetProvider provider) {
     txnl = Transactional.of(txExecutorFactory, new Supplier<UsageDatasetIterable>() {
       @Override
       public UsageDatasetIterable get() {
         try {
-          Object usageDataset = DatasetsUtil.getOrCreateDataset(datasetFramework, USAGE_INSTANCE_ID,
-                                                                UsageDataset.class.getSimpleName(),
-                                                                DatasetProperties.EMPTY, null, null);
+          Object usageDataset = provider.get(USAGE_INSTANCE_ID, null, null);
+
           // Backward compatible check for version <= 3.0.0
           if (usageDataset instanceof UsageDataset) {
             return new UsageDatasetIterable((UsageDataset) usageDataset);
