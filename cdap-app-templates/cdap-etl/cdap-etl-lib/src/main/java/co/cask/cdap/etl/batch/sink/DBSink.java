@@ -195,7 +195,11 @@ public class DBSink extends BatchSink<StructuredRecord, DBRecord, NullWritable> 
       connection.close();
     }
 
-    columns = ImmutableList.copyOf(Splitter.on(",").split(dbSinkConfig.columns));
+    if (dbSinkConfig.columns == null || "*".equals(dbSinkConfig.columns)) {
+      columns = ImmutableList.copyOf(columnToType.keySet());
+    } else {
+      columns = ImmutableList.copyOf(Splitter.on(",").split(dbSinkConfig.columns));
+    }
     columnTypes = new int[columns.size()];
     for (int i = 0; i < columnTypes.length; i++) {
       String name = columns.get(i);
@@ -227,16 +231,23 @@ public class DBSink extends BatchSink<StructuredRecord, DBRecord, NullWritable> 
    * {@link PluginConfig} for {@link DBSink}
    */
   public static class DBSinkConfig extends DBConfig {
-    @Description("Comma-separated list of columns in the specified table to export to.")
-    String columns;
-
     @Description("Name of the table to export to.")
-    public String tableName;
+    String tableName;
+
+    @Nullable
+    @Description("Comma-separated list of columns in the specified table to export to. Defaults to '*', which " +
+      "stands for all columns.")
+    String columns;
 
     @Nullable
     @Name(Properties.DB.COLUMN_NAME_CASE)
     @Description(COLUMN_CASE_DESCRIPTION)
     String columnNameCase;
+
+    DBSinkConfig() {
+      this.columns = "*";
+      this.columnNameCase = FieldCase.NONE.name();
+    }
   }
 
   private static class DBOutputFormatProvider implements OutputFormatProvider {
@@ -252,6 +263,9 @@ public class DBSink extends BatchSink<StructuredRecord, DBRecord, NullWritable> 
         conf.put(DBConfiguration.PASSWORD_PROPERTY, dbSinkConfig.password);
       }
       conf.put(DBConfiguration.OUTPUT_TABLE_NAME_PROPERTY, dbSinkConfig.tableName);
+      if ("*".equals(dbSinkConfig.columns)) {
+        conf.put(DBConfiguration.OUTPUT_FIELD_COUNT_PROPERTY, )
+      }
       conf.put(DBConfiguration.OUTPUT_FIELD_NAMES_PROPERTY, dbSinkConfig.columns);
     }
 

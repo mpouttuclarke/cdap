@@ -54,7 +54,7 @@ public class DBRecord implements Writable, DBWritable {
 
   private StructuredRecord record;
   /**
-   * Need to cache {@link ResultSetMetaData} of the record for use during writing to a table.
+   * A cache of column types populated via {@link ResultSetMetaData} of the record for use during writing to a table.
    * This is because we cannot rely on JDBC drivers to properly set metadata in the {@link PreparedStatement}
    * passed to the #write method in this class.
    */

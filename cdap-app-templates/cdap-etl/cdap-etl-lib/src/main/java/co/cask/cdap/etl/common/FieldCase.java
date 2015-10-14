@@ -18,6 +18,8 @@ package co.cask.cdap.etl.common;
 
 import com.google.common.base.Strings;
 
+import javax.annotation.Nullable;
+
 /**
 * Enum to denote case of Structured Record field.
 */
@@ -26,7 +28,7 @@ public enum FieldCase {
   UPPER,
   NONE;
 
-  public static FieldCase toFieldCase(String fieldCase) {
+  public static FieldCase toFieldCase(@Nullable String fieldCase) {
     if (Strings.isNullOrEmpty(fieldCase)) {
       return FieldCase.NONE;
     }
