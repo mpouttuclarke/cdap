@@ -15,6 +15,7 @@
  */
 
 var gulp = require('gulp'),
+    uncss = require('gulp-uncss'),
     plug = require('gulp-load-plugins')(),
     pkg = require('./package.json'),
     del = require('del'),
@@ -75,6 +76,14 @@ gulp.task('css:app', function() {
 });
 
 
+gulp.task('css:app:clean', function () {
+    return gulp.src('./dist/assets/bundle/app.css`')
+        .pipe(uncss({
+            html: ['./dist/assets/features/**/*.html']
+        }))
+        .pipe(plug.cssnano())
+        .pipe(gulp.dest('./out'));
+});
 
 /*
   library javascript
@@ -424,7 +433,7 @@ gulp.task('style', ['css']);
 
 
 gulp.task('watch:build', ['watch:js', 'css', 'img', 'tpl', 'html.dev']);
-gulp.task('build', ['js', 'css', 'img', 'tpl', 'html']);
+gulp.task('build', ['js', 'css', 'img', 'tpl', 'html', 'css:app:clean']);
 
 gulp.task('distribute', ['build', 'rev:replace']);
 
