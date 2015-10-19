@@ -20,22 +20,31 @@ import java.util.Objects;
 import javax.annotation.Nullable;
 
 /**
- * Describes the status of a program, as returned by the batch status endpoint POST /namespaces/{namespace}/status.
+ * Describes the results returned by the batch stop/start endpoints POST /namespaces/{namespace}/stop|start.
  */
-public class BatchProgramStatus extends BatchProgramResult {
-  private final String status;
+public class BatchProgramResult extends BatchProgram {
+  private final int statusCode;
+  private final String error;
 
-  public BatchProgramStatus(BatchProgram program, int statusCode, @Nullable String error, @Nullable String status) {
-    super(program, statusCode, error);
-    this.status = status;
+  public BatchProgramResult(BatchProgram program, int statusCode, @Nullable String error) {
+    super(program.appId, program.programType, program.programId);
+    this.statusCode = statusCode;
+    this.error = error;
   }
 
   /**
-   * @return the status of the program. Null if there was an error.
+   * @return the status code when getting the status of the program.
+   */
+  public int getStatusCode() {
+    return statusCode;
+  }
+
+  /**
+   * @return the error message if there was an error. Null if there was no error.
    */
   @Nullable
-  public String getStatus() {
-    return status;
+  public String getError() {
+    return error;
   }
 
   @Override
@@ -50,13 +59,14 @@ public class BatchProgramStatus extends BatchProgramResult {
       return false;
     }
 
-    BatchProgramStatus that = (BatchProgramStatus) o;
+    BatchProgramResult that = (BatchProgramResult) o;
 
-    return Objects.equals(status, that.status);
+    return Objects.equals(statusCode, that.statusCode) &&
+      Objects.equals(error, that.error);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(super.hashCode(), status);
+    return Objects.hash(super.hashCode(), statusCode, error);
   }
 }

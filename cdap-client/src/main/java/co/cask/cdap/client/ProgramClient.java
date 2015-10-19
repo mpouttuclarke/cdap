@@ -28,6 +28,8 @@ import co.cask.cdap.common.conf.Constants;
 import co.cask.cdap.common.io.CaseInsensitiveEnumTypeAdapterFactory;
 import co.cask.cdap.common.utils.Tasks;
 import co.cask.cdap.proto.BatchProgram;
+import co.cask.cdap.proto.BatchProgramResult;
+import co.cask.cdap.proto.BatchProgramStart;
 import co.cask.cdap.proto.BatchProgramStatus;
 import co.cask.cdap.proto.DistributedProgramLiveInfo;
 import co.cask.cdap.proto.Id;
@@ -73,6 +75,7 @@ public class ProgramClient {
     .registerTypeAdapterFactory(new CaseInsensitiveEnumTypeAdapterFactory())
     .create();
   private static final Type BATCH_STATUS_RESPONSE_TYPE = new TypeToken<List<BatchProgramStatus>>() { }.getType();
+  private static final Type BATCH_RESULTS_TYPE = new TypeToken<List<BatchProgramResult>>() { }.getType();
 
   private final RESTClient restClient;
   private final ClientConfig config;
@@ -151,6 +154,27 @@ public class ProgramClient {
   }
 
   /**
+   * Starts a batch of programs in the same call.
+   *
+   * @param namespace the namespace of the programs
+   * @param programs the programs to start, including any runtime arguments to start them with
+   * @return the result of starting each program
+   * @throws IOException if a network error occurred
+   * @throws UnauthorizedException if the request is not authorized successfully in the gateway server
+   */
+  public List<BatchProgramResult> start(Id.Namespace namespace, List<BatchProgramStart> programs)
+    throws IOException, UnauthorizedException {
+
+    URL url = config.resolveNamespacedURLV3(namespace, "start");
+    HttpRequest request = HttpRequest.builder(HttpMethod.POST, url)
+      .withBody(GSON.toJson(programs), Charsets.UTF_8).build();
+
+    HttpResponse response = restClient.execute(request, config.getAccessToken());
+    return ObjectResponse.<List<BatchProgramResult>>fromJsonBody(response, BATCH_RESULTS_TYPE, GSON)
+      .getResponseObject();
+  }
+
+  /**
    * Stops a program.
    *
    * @param program the program to stop
@@ -160,13 +184,34 @@ public class ProgramClient {
    */
   public void stop(Id.Program program) throws IOException, ProgramNotFoundException, UnauthorizedException {
     String path = String.format("apps/%s/%s/%s/stop",
-                                program.getApplicationId(), program.getType().getCategoryName(), program.getId());
+      program.getApplicationId(), program.getType().getCategoryName(), program.getId());
     URL url = config.resolveNamespacedURLV3(program.getNamespace(), path);
     HttpResponse response = restClient.execute(HttpMethod.POST, url, config.getAccessToken(),
                                                HttpURLConnection.HTTP_NOT_FOUND);
     if (response.getResponseCode() == HttpURLConnection.HTTP_NOT_FOUND) {
       throw new ProgramNotFoundException(program);
     }
+  }
+
+  /**
+   * Stops a batch of programs in the same call.
+   *
+   * @param namespace the namespace of the programs
+   * @param programs the programs to stop
+   * @return the result of stopping each program
+   * @throws IOException if a network error occurred
+   * @throws UnauthorizedException if the request is not authorized successfully in the gateway server
+   */
+  public List<BatchProgramResult> stop(Id.Namespace namespace, List<BatchProgram> programs)
+    throws IOException, UnauthorizedException {
+
+    URL url = config.resolveNamespacedURLV3(namespace, "stop");
+    HttpRequest request = HttpRequest.builder(HttpMethod.POST, url)
+      .withBody(GSON.toJson(programs), Charsets.UTF_8).build();
+
+    HttpResponse response = restClient.execute(request, config.getAccessToken());
+    return ObjectResponse.<List<BatchProgramResult>>fromJsonBody(response, BATCH_RESULTS_TYPE, GSON)
+      .getResponseObject();
   }
 
   /**
@@ -213,7 +258,7 @@ public class ProgramClient {
     throws IOException, ProgramNotFoundException, UnauthorizedException {
 
     String path = String.format("apps/%s/%s/%s/status",
-                                program.getApplicationId(), program.getType().getCategoryName(), program.getId());
+      program.getApplicationId(), program.getType().getCategoryName(), program.getId());
     URL url = config.resolveNamespacedURLV3(program.getNamespace(), path);
     HttpResponse response = restClient.execute(HttpMethod.GET, url, config.getAccessToken(),
                                                HttpURLConnection.HTTP_NOT_FOUND);
@@ -231,7 +276,7 @@ public class ProgramClient {
    * @param programs the list of programs to get status for
    * @return the status of each program
    */
-  public List<BatchProgramStatus> getBatchStatus(Id.Namespace namespace, List<BatchProgram> programs)
+  public List<BatchProgramStatus> getStatus(Id.Namespace namespace, List<BatchProgram> programs)
     throws IOException, UnauthorizedException {
 
     URL url = config.resolveNamespacedURLV3(namespace, "status");
@@ -269,6 +314,42 @@ public class ProgramClient {
     } catch (ExecutionException e) {
       Throwables.propagateIfPossible(e.getCause(), UnauthorizedException.class);
       Throwables.propagateIfPossible(e.getCause(), ProgramNotFoundException.class);
+      Throwables.propagateIfPossible(e.getCause(), IOException.class);
+    }
+  }
+
+  /**
+   * Waits for a batch of programs to all have a certain status.
+   *
+   * @param namespace the namespace of the programs
+   * @param programs the programs to wait for to have the specific status
+   * @param status the desired status
+   * @param timeout how long to wait in milliseconds until timing out
+   * @throws IOException if a network error occurred
+   * @throws ProgramNotFoundException if the program with the specified name could not be found
+   * @throws UnauthorizedException if the request is not authorized successfully in the gateway server
+   * @throws TimeoutException if the program did not achieve the desired program status before the timeout
+   * @throws InterruptedException if interrupted while waiting for the desired program status
+   */
+  public void waitForStatus(final Id.Namespace namespace, final List<BatchProgram> programs,
+                            final String status, long timeout, TimeUnit timeoutUnit)
+    throws UnauthorizedException, IOException, ProgramNotFoundException, TimeoutException, InterruptedException {
+
+    try {
+      Tasks.waitFor(true, new Callable<Boolean>() {
+        @Override
+        public Boolean call() throws Exception {
+          List<BatchProgramStatus> statusList = getStatus(namespace, programs);
+          for (BatchProgramStatus programStatus : statusList) {
+            if (!status.equals(programStatus.getStatus())) {
+              return false;
+            }
+          }
+          return true;
+        }
+      }, timeout, timeoutUnit, 1, TimeUnit.SECONDS);
+    } catch (ExecutionException e) {
+      Throwables.propagateIfPossible(e.getCause(), UnauthorizedException.class);
       Throwables.propagateIfPossible(e.getCause(), IOException.class);
     }
   }
