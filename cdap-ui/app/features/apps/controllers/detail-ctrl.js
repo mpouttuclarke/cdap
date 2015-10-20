@@ -14,12 +14,17 @@
   the License.
 */
 angular.module(PKG.name + '.feature.apps')
-  .controller('AppDetailController', function(rAppData, GLOBALS, myHydratorFactory) {
+  .controller('AppDetailController', function(rAppData, GLOBALS, myHydratorFactory, $state) {
     this.myHydratorFactory = myHydratorFactory;
 
     this.isHydrator = ([GLOBALS.etlBatch, GLOBALS.etlRealtime].indexOf(rAppData.artifact.name) !== -1);
     this.artifact = {
       name: rAppData.artifact.name
     };
+    this.metadataParams = {
+      namespace: $state.params.namespace,
+      appId: $state.params.appId
+    };
+
     this.GLOBALS = GLOBALS;
   });
