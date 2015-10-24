@@ -23,7 +23,7 @@
   <parent>
     <groupId>co.cask.cdap</groupId>
     <artifactId>cdap</artifactId>
-    <version>3.2.0</version>
+    <version>3.2.0-context</version>
   </parent>
 
   <artifactId>cdap-ui</artifactId>
