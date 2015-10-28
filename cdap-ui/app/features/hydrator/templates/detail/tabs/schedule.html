@@ -13,12 +13,25 @@
   License for the specific language governing permissions and limitations under
   the License.
 -->
+<!--
+<br/>
+<div class="col-xs-12">
+  <fieldset disabled>
+    <div class="basic-cron" ng-if="isBasic">
+      <cron-selection init="schedule"></cron-selection>
+    </div>
 
-<!-- TOP PANEL -->
-<div ui-view="toppanel"></div>
+    <div class="form-group" ng-if="!isBasic">
+      <div class="col-sm-10">
+        <div data-name="field"
+             class="my-widget-container"
+             data-model="schedule"
+             data-myconfig="{properties: {}, widget: 'schedule'}"
+             widget-container>
+        </div>
+      </div>
+    </div>
+  </fieldset>
+</div> -->
 
-<!-- DAG DIAGRAM -->
-<div ui-view="canvas"></div>
-
-<!-- CONSOLE BOTTOM PANNEL -->
-<div ui-view="bottompanel"></div>
+<h1>Schedule</h1>

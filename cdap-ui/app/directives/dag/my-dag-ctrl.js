@@ -367,7 +367,7 @@ angular.module(PKG.name + '.commons')
         $timeout(this.drawGraph.bind(this));
     }
 
-    if (this.plugins.length) {
+    if (MyAppDAGService.nodes) {
       resetComponent.call(this);
     }
 
