@@ -18,6 +18,7 @@ package co.cask.cdap.internal.app.runtime.spark;
 
 import co.cask.cdap.api.Resources;
 import co.cask.cdap.api.ServiceDiscoverer;
+import co.cask.cdap.api.app.ApplicationSpecification;
 import co.cask.cdap.api.common.RuntimeArguments;
 import co.cask.cdap.api.common.Scope;
 import co.cask.cdap.api.data.DatasetInstantiationException;
@@ -25,6 +26,7 @@ import co.cask.cdap.api.dataset.Dataset;
 import co.cask.cdap.api.metrics.Metrics;
 import co.cask.cdap.api.metrics.MetricsCollectionService;
 import co.cask.cdap.api.metrics.MetricsContext;
+import co.cask.cdap.api.plugin.PluginContext;
 import co.cask.cdap.api.spark.Spark;
 import co.cask.cdap.api.spark.SparkContext;
 import co.cask.cdap.api.spark.SparkProgram;
@@ -33,6 +35,7 @@ import co.cask.cdap.api.workflow.WorkflowToken;
 import co.cask.cdap.common.conf.Constants;
 import co.cask.cdap.common.logging.LoggingContext;
 import co.cask.cdap.internal.app.program.ProgramTypeMetricTag;
+import co.cask.cdap.internal.app.runtime.plugin.PluginInstantiator;
 import co.cask.cdap.internal.app.runtime.spark.metrics.SparkUserMetrics;
 import co.cask.cdap.logging.context.SparkLoggingContext;
 import co.cask.cdap.proto.Id;
@@ -58,6 +61,7 @@ import javax.annotation.Nullable;
  */
 public abstract class AbstractSparkContext implements SparkContext, Closeable {
 
+  private final ApplicationSpecification applicationSpecification;
   private final SparkSpecification specification;
   private final Id.Program programId;
   private final RunId runId;
@@ -67,16 +71,20 @@ public abstract class AbstractSparkContext implements SparkContext, Closeable {
   private final DiscoveryServiceClient discoveryServiceClient;
   private final MetricsContext metricsContext;
   private final LoggingContext loggingContext;
+  private final PluginInstantiator pluginInstantiator;
   private final WorkflowToken workflowToken;
 
   private Resources executorResources;
   private SparkConf sparkConf;
 
-  protected AbstractSparkContext(SparkSpecification specification, Id.Program programId, RunId runId,
+  protected AbstractSparkContext(ApplicationSpecification applicationSpecification,
+                                 SparkSpecification specification, Id.Program programId, RunId runId,
                                  ClassLoader programClassLoader, long logicalStartTime,
                                  Map<String, String> runtimeArguments, DiscoveryServiceClient discoveryServiceClient,
                                  MetricsContext metricsContext, LoggingContext loggingContext,
+                                 @Nullable PluginInstantiator pluginInstantiator,
                                  @Nullable WorkflowToken workflowToken) {
+    this.applicationSpecification = applicationSpecification;
     this.specification = specification;
     this.programId = programId;
     this.runId = runId;
@@ -88,7 +96,18 @@ public abstract class AbstractSparkContext implements SparkContext, Closeable {
     this.loggingContext = loggingContext;
     this.executorResources = Objects.firstNonNull(specification.getExecutorResources(), new Resources());
     this.sparkConf = new SparkConf();
+    this.pluginInstantiator = pluginInstantiator;
     this.workflowToken = workflowToken;
+  }
+
+  @Override
+  public ApplicationSpecification getApplicationSpecification() {
+    return applicationSpecification;
+  }
+
+  @Override
+  public String getNamespace() {
+    return programId.getNamespaceId();
   }
 
   @Override
@@ -114,6 +133,11 @@ public abstract class AbstractSparkContext implements SparkContext, Closeable {
   @Override
   public Metrics getMetrics() {
     return new SparkUserMetrics(metricsContext);
+  }
+
+  @Override
+  public PluginContext getPluginContext() {
+    return new SparkPluginContext(pluginInstantiator, programId, applicationSpecification.getPlugins());
   }
 
   @Override
@@ -201,6 +225,14 @@ public abstract class AbstractSparkContext implements SparkContext, Closeable {
    */
   public MetricsContext getMetricsContext() {
     return metricsContext;
+  }
+
+  /**
+   * Returns the {@link PluginInstantiator} for this context.
+   */
+  @Nullable
+  public PluginInstantiator getPluginInstantiator() {
+    return pluginInstantiator;
   }
 
   /**

@@ -207,7 +207,6 @@ public class CLIMainTest {
   @Test
   public void testStream() throws Exception {
     String streamId = PREFIX + "sdf123";
-    Id.Stream stream = Id.Stream.from(Id.Namespace.DEFAULT, streamId);
 
     testCommandOutputContains(cli, "create stream " + streamId, "Successfully created stream");
     testCommandOutputContains(cli, "list streams", streamId);
@@ -256,11 +255,11 @@ public class CLIMainTest {
   public void testSchedule() throws Exception {
     String scheduleId = FakeApp.NAME + "." + FakeApp.SCHEDULE_NAME;
     String workflowId = FakeApp.NAME + "." + FakeWorkflow.NAME;
-    testCommandOutputContains(cli, "get schedule status " + scheduleId, "SCHEDULED");
-    testCommandOutputContains(cli, "suspend schedule " + scheduleId, "Successfully suspended");
     testCommandOutputContains(cli, "get schedule status " + scheduleId, "SUSPENDED");
     testCommandOutputContains(cli, "resume schedule " + scheduleId, "Successfully resumed");
     testCommandOutputContains(cli, "get schedule status " + scheduleId, "SCHEDULED");
+    testCommandOutputContains(cli, "suspend schedule " + scheduleId, "Successfully suspended");
+    testCommandOutputContains(cli, "get schedule status " + scheduleId, "SUSPENDED");
     testCommandOutputContains(cli, "get workflow schedules " + workflowId, FakeApp.SCHEDULE_NAME);
   }
 
@@ -525,7 +524,8 @@ public class CLIMainTest {
                          FakeWorkflow.FakeAction.ANOTHER_FAKE_NAME, FakeWorkflow.FakeAction.TOKEN_KEY), fakeNodeValue);
 
     // stop workflow
-    testCommandOutputContains(cli, "stop workflow " + workflow, "400: Program not running");
+    testCommandOutputContains(cli, "stop workflow " + workflow,
+                              String.format("400: Program '%s' is not running", fakeWorkflowId));
   }
 
   private static File createAppJarFile(Class<?> cls) throws IOException {

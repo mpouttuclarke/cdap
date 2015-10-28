@@ -16,8 +16,8 @@
 
 package co.cask.cdap.internal.app.runtime.schedule;
 
+import co.cask.cdap.api.app.ApplicationSpecification;
 import co.cask.cdap.api.schedule.ScheduleSpecification;
-import co.cask.cdap.app.ApplicationSpecification;
 import co.cask.cdap.app.runtime.ProgramController;
 import co.cask.cdap.app.runtime.ProgramRuntimeService;
 import co.cask.cdap.app.store.Store;
@@ -123,6 +123,11 @@ public final class ScheduleTaskRunner {
         if (state == ProgramController.State.ERROR) {
           error(controller.getFailureCause());
         }
+      }
+
+      @Override
+      public void killed() {
+        latch.countDown();
       }
 
       @Override

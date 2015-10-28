@@ -1,3 +1,19 @@
+/*
+ * Copyright © 2015 Cask Data, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
 angular.module(PKG.name + '.commons')
   .service('WidgetFactory', function() {
     this.registry = {
@@ -61,6 +77,16 @@ angular.module(PKG.name + '.commons')
         attributes: {
           'ng-model': 'model',
           'config': 'myconfig',
+          'mode': 'javascript',
+          placeholder: '{{myconfig.properties.default || ""}}'
+        }
+      },
+      'python-editor': {
+        element: '<div my-ace-editor></div>',
+        attributes: {
+          'ng-model': 'model',
+          'config': 'myconfig',
+          'mode': 'python',
           placeholder: '{{myconfig.properties.default || ""}}'
         }
       },
@@ -92,14 +118,6 @@ angular.module(PKG.name + '.commons')
           'class': 'form-control',
           'ng-options': 'item as item for item in myconfig.properties.values',
           'ng-init': 'model = model.length ? model : myconfig.properties.default'
-        }
-      },
-      'stream-properties': {
-        element: '<my-stream-properties></my-stream-properties>',
-        attributes: {
-          'ng-model': 'model',
-          'data-plugins': 'properties',
-          'data-config': 'myconfig'
         }
       },
       'stream-selector': {

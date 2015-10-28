@@ -26,17 +26,19 @@ import co.cask.cdap.api.data.batch.OutputFormatProvider;
 import co.cask.cdap.api.data.batch.Split;
 import co.cask.cdap.api.data.stream.StreamBatchReadable;
 import co.cask.cdap.api.dataset.Dataset;
-import co.cask.cdap.api.templates.AdapterContext;
+import co.cask.cdap.api.plugin.PluginContext;
 import co.cask.cdap.api.workflow.Workflow;
 import co.cask.cdap.api.workflow.WorkflowToken;
 
 import java.util.List;
+import java.util.Map;
 import javax.annotation.Nullable;
 
 /**
  * MapReduce job execution context.
  */
-public interface MapReduceContext extends RuntimeContext, DatasetContext, ServiceDiscoverer, AdapterContext {
+public interface MapReduceContext extends RuntimeContext, DatasetContext, ServiceDiscoverer, PluginContext {
+
   /**
    * @return The specification used to configure this {@link MapReduce} job instance.
    */
@@ -99,19 +101,53 @@ public interface MapReduceContext extends RuntimeContext, DatasetContext, Servic
    * Overrides the output configuration of this MapReduce job to write to the specified dataset by its name.
    *
    * @param datasetName the name of the output dataset
+   * Deprecated as of version 3.2.0. Use {@link #addOutput(String)}, instead.
    */
+  @Deprecated
   void setOutput(String datasetName);
 
   /**
    * Overrides the output configuration of this MapReduce job to write to the specified dataset instance.
-   * Currently, the dataset passed in must either be an {@link OutputFormatProvider}.
+   * Currently, the dataset passed in must be an {@link OutputFormatProvider}.
    * You may want to use this method instead of {@link #setOutput(String)} if your output dataset uses runtime
    * arguments set in your own program logic.
    *
    * @param datasetName the name of the output dataset
    * @param dataset the output dataset
+   * @throws IllegalArgumentException if the given dataset is not an OutputFormatProvider.
+   * Deprecated as of version 3.2.0. Use {@link #addOutput(String, Map)}, instead.
    */
+  @Deprecated
   void setOutput(String datasetName, Dataset dataset);
+
+  /**
+   * Overrides the output configuration of this MapReduce job to also allow writing to the specified dataset by
+   * its name.
+   *
+   * @param datasetName the name of the output dataset
+   */
+  void addOutput(String datasetName);
+
+  /**
+   * Updates the output configuration of this MapReduce job to also allow writing to the specified dataset.
+   * Currently, the dataset specified in must be an {@link OutputFormatProvider}.
+   * You may want to use this method instead of {@link #addOutput(String)} if your output dataset uses runtime
+   * arguments set in your own program logic.
+   *
+   * @param datasetName the name of the output dataset
+   * @param arguments the arguments to use when instantiating the dataset
+   * @throws IllegalArgumentException if the specified dataset is not an OutputFormatProvider.
+   */
+  void addOutput(String datasetName, Map<String, String> arguments);
+
+  /**
+   * Updates the output configuration of this MapReduce job to also allow writing using the given OutputFormatProvider.
+   *
+   * @param outputName the name of the output
+   * @param outputFormatProvider the outputFormatProvider which specifies an OutputFormat and configuration to be used
+   *                             when writing to this output
+   */
+  void addOutput(String outputName, OutputFormatProvider outputFormatProvider);
 
   /**
    * Overrides the resources, such as memory and virtual cores, to use for each mapper of this MapReduce job.
@@ -129,7 +165,7 @@ public interface MapReduceContext extends RuntimeContext, DatasetContext, Servic
 
   /**
    * @return the {@link WorkflowToken} associated with the current {@link Workflow},
-   * if the {@link MapReduce} program is executed as a part of the Workflow.
+   * if the {@link MapReduce} program is executed as a part of the Workflow; returns {@code null} otherwise.
    */
   @Nullable
   WorkflowToken getWorkflowToken();

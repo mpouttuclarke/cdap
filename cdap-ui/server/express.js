@@ -1,3 +1,19 @@
+/*
+ * Copyright © 2015 Cask Data, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
 /*global require, module, process, __dirname */
 
 module.exports = {
@@ -72,34 +88,54 @@ function makeApp (authAddress, cdapConfig) {
 
     var path = DIST_PATH + '/assets/public';
 
-    fs.mkdir(path, function (err) {
-      if (err && err.code === 'EEXIST') {
-        console.log('Suppressing "folder aleady exists" error for download query');
-        // means the folder already exist. We can ignore it
+    try {
+      fs.mkdirSync(path);
+    } catch (e) {
+      if (e.code !== 'EEXIST') {
+        log.debug('Error! ' + e);
+        res.status(500).send('Write permission denied. Unable to download the CSV file.');
+        return;
       }
-    });
+    }
 
     var decoder = new StringDecoder('utf8');
 
-    var file = fs.createWriteStream(DIST_PATH + '/assets/public/' + query + '.csv');
+    var filePath = DIST_PATH + '/assets/public/' + query + '.csv';
 
 
-    var r = request.post({
-      method: 'POST',
-      url: url
-    });
+    try {
+      fs.lstatSync(filePath);
 
-    r.on('response', function(response) {
-      response.on('data', function(chunk) {
-        file.write(decoder.write(chunk));
+      // checking if file exist
+      // if file exist, respond with the link directly
+      // if file does not exist, it will throw an error
+      res.send('/assets/public/' + query + '.csv');
+
+    } catch (e) {
+      // this catch block will get executed when the file does not exist yet
+
+      var file = fs.createWriteStream(filePath);
+
+      var r = request({
+        method: 'POST',
+        url: url,
+        rejectUnauthorized: false,
+        requestCert: true,
+        agent: false,
+        headers: req.headers
       });
 
-      response.on('end', function() {
-        file.end();
-        res.send('/assets/public/' + query + '.csv');
-      });
-    });
+      r.on('response', function(response) {
+        response.on('data', function(chunk) {
+          file.write(decoder.write(chunk));
+        });
 
+        response.on('end', function() {
+          file.end();
+          res.send('/assets/public/' + query + '.csv');
+        });
+      });
+    }
   });
 
   /*
@@ -293,6 +329,24 @@ function makeApp (authAddress, cdapConfig) {
       } catch(e) {
         config.error = e.code;
         config.message = 'Error reading template - ' + appname + ' of type - ' + apptype ;
+        log.debug(config.message);
+        res.status(404).send(config);
+      }
+    }
+  ]);
+
+  app.get('/validators', [
+    function (req, res) {
+      var filePath = __dirname + '/../templates/validators/validators.json';
+      var config = {};
+      var validators = {};
+
+      try {
+        validators = JSON.parse(fs.readFileSync(filePath));
+        res.send(validators);
+      } catch(e) {
+        config.error = e.code;
+        config.message = 'Error reading validators.json';
         log.debug(config.message);
         res.status(404).send(config);
       }

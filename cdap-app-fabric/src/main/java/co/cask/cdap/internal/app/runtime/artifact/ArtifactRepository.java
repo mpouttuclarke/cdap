@@ -16,26 +16,33 @@
 
 package co.cask.cdap.internal.app.runtime.artifact;
 
+import co.cask.cdap.api.artifact.ApplicationClass;
 import co.cask.cdap.api.artifact.ArtifactClasses;
-import co.cask.cdap.api.artifact.ArtifactDescriptor;
-import co.cask.cdap.api.artifact.ArtifactVersion;
-import co.cask.cdap.api.templates.plugins.PluginClass;
+import co.cask.cdap.api.artifact.ArtifactId;
+import co.cask.cdap.api.plugin.PluginClass;
+import co.cask.cdap.api.plugin.PluginSelector;
 import co.cask.cdap.common.ArtifactAlreadyExistsException;
 import co.cask.cdap.common.ArtifactNotFoundException;
 import co.cask.cdap.common.ArtifactRangeNotFoundException;
 import co.cask.cdap.common.InvalidArtifactException;
+import co.cask.cdap.common.conf.ArtifactConfig;
+import co.cask.cdap.common.conf.ArtifactConfigReader;
 import co.cask.cdap.common.conf.CConfiguration;
 import co.cask.cdap.common.conf.Constants;
 import co.cask.cdap.common.io.Locations;
 import co.cask.cdap.common.utils.DirUtils;
 import co.cask.cdap.common.utils.ImmutablePair;
+import co.cask.cdap.internal.app.runtime.plugin.PluginNotExistsException;
 import co.cask.cdap.proto.Id;
+import co.cask.cdap.proto.artifact.ApplicationClassInfo;
+import co.cask.cdap.proto.artifact.ApplicationClassSummary;
 import co.cask.cdap.proto.artifact.ArtifactRange;
 import co.cask.cdap.proto.artifact.ArtifactSummary;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.io.Files;
 import com.google.inject.Inject;
 import org.apache.twill.filesystem.Location;
@@ -63,15 +70,17 @@ public class ArtifactRepository {
   private final ArtifactClassLoaderFactory artifactClassLoaderFactory;
   private final ArtifactInspector artifactInspector;
   private final File systemArtifactDir;
+  private final ArtifactConfigReader configReader;
 
   @Inject
   ArtifactRepository(CConfiguration cConf, ArtifactStore artifactStore) {
     this.artifactStore = artifactStore;
     File baseUnpackDir = new File(cConf.get(Constants.CFG_LOCAL_DATA_DIR),
       cConf.get(Constants.AppFabric.TEMP_DIR)).getAbsoluteFile();
-    this.artifactClassLoaderFactory = new ArtifactClassLoaderFactory(baseUnpackDir);
-    this.artifactInspector = new ArtifactInspector(cConf, artifactClassLoaderFactory);
+    this.artifactClassLoaderFactory = new ArtifactClassLoaderFactory(cConf, baseUnpackDir);
+    this.artifactInspector = new ArtifactInspector(cConf, artifactClassLoaderFactory, baseUnpackDir);
     this.systemArtifactDir = new File(cConf.get(Constants.AppFabric.SYSTEM_ARTIFACTS_DIR));
+    this.configReader = new ArtifactConfigReader();
   }
 
   /**
@@ -132,15 +141,58 @@ public class ArtifactRepository {
   }
 
   /**
+   * Get all application classes in the given namespace, optionally including classes from system artifacts as well.
+   * Will never return null. If no artifacts exist, an empty list is returned. Namespace existence is not checked.
+   *
+   * @param namespace the namespace to get application classes from
+   * @param includeSystem whether classes from system artifacts should be included in the results
+   * @return an unmodifiable list of application classes that belong to the given namespace
+   * @throws IOException if there as an exception reading from the meta store
+   */
+  public List<ApplicationClassSummary> getApplicationClasses(Id.Namespace namespace,
+                                                             boolean includeSystem) throws IOException {
+    List<ApplicationClassSummary> summaries = Lists.newArrayList();
+    if (includeSystem) {
+      addAppSummaries(summaries, Id.Namespace.SYSTEM);
+    }
+    addAppSummaries(summaries, namespace);
+
+    return Collections.unmodifiableList(summaries);
+  }
+
+  /**
+   * Get all application classes in the given namespace of the given class name.
+   * Will never return null. If no artifacts exist, an empty list is returned. Namespace existence is not checked.
+   *
+   * @param namespace the namespace to get application classes from
+   * @param className the application class to get
+   * @return an unmodifiable list of application classes that belong to the given namespace
+   * @throws IOException if there as an exception reading from the meta store
+   */
+  public List<ApplicationClassInfo> getApplicationClasses(Id.Namespace namespace,
+                                                          String className) throws IOException {
+    List<ApplicationClassInfo> infos = Lists.newArrayList();
+    for (Map.Entry<ArtifactDescriptor, ApplicationClass> entry :
+      artifactStore.getApplicationClasses(namespace, className).entrySet()) {
+      ArtifactSummary artifactSummary = ArtifactSummary.from(entry.getKey().getArtifactId());
+      ApplicationClass appClass = entry.getValue();
+      infos.add(new ApplicationClassInfo(artifactSummary, appClass.getClassName(), appClass.getConfigSchema()));
+    }
+    return Collections.unmodifiableList(infos);
+  }
+
+  /**
    * Returns a {@link SortedMap} of plugin artifact to all plugins available for the given artifact. The keys
    * are sorted by the {@link ArtifactDescriptor} for the artifact that contains plugins available to the given
    * artifact.
    *
    * @param artifactId the id of the artifact to get plugins for
    * @return an unmodifiable sorted map from plugin artifact to plugins in that artifact
+   * @throws ArtifactNotFoundException if the given artifact does not exist
    * @throws IOException if there was an exception reading plugin metadata from the artifact store
    */
-  public SortedMap<ArtifactDescriptor, List<PluginClass>> getPlugins(Id.Artifact artifactId) throws IOException {
+  public SortedMap<ArtifactDescriptor, List<PluginClass>> getPlugins(Id.Artifact artifactId)
+    throws IOException, ArtifactNotFoundException {
     return artifactStore.getPluginClasses(artifactId);
   }
 
@@ -152,10 +204,11 @@ public class ArtifactRepository {
    * @param artifactId the id of the artifact to get plugins for
    * @param pluginType the type of plugins to get
    * @return an unmodifiable sorted map from plugin artifact to plugins in that artifact
+   * @throws ArtifactNotFoundException if the given artifact does not exist
    * @throws IOException if there was an exception reading plugin metadata from the artifact store
    */
-  public SortedMap<ArtifactDescriptor, List<PluginClass>> getPlugins(Id.Artifact artifactId,
-                                                                     String pluginType) throws IOException {
+  public SortedMap<ArtifactDescriptor, List<PluginClass>> getPlugins(Id.Artifact artifactId, String pluginType)
+    throws IOException, ArtifactNotFoundException {
     return artifactStore.getPluginClasses(artifactId, pluginType);
   }
 
@@ -168,11 +221,12 @@ public class ArtifactRepository {
    * @param pluginType the type of plugins to get
    * @param pluginName the name of plugins to get
    * @return an unmodifiable sorted map from plugin artifact to plugins in that artifact
+   * @throws ArtifactNotFoundException if the given artifact does not exist
    * @throws IOException if there was an exception reading plugin metadata from the artifact store
    */
   public SortedMap<ArtifactDescriptor, PluginClass> getPlugins(Id.Artifact artifactId, String pluginType,
                                                                String pluginName)
-    throws IOException, PluginNotExistsException {
+    throws IOException, PluginNotExistsException, ArtifactNotFoundException {
     return artifactStore.getPluginClasses(artifactId, pluginType, pluginName);
   }
 
@@ -183,14 +237,31 @@ public class ArtifactRepository {
    * @param pluginType plugin type name
    * @param pluginName plugin name
    * @param selector for selecting which plugin to use
-   * @return the entry found or {@code null} if none was found
+   * @return the entry found
    * @throws IOException if there was an exception reading plugin metadata from the artifact store
+   * @throws ArtifactNotFoundException if the given artifact does not exist
    * @throws PluginNotExistsException if no plugins of the given type and name are available to the given artifact
    */
   public Map.Entry<ArtifactDescriptor, PluginClass> findPlugin(Id.Artifact artifactId, String pluginType,
                                                                String pluginName, PluginSelector selector)
-    throws IOException, PluginNotExistsException {
-    return selector.select(artifactStore.getPluginClasses(artifactId, pluginType, pluginName));
+    throws IOException, PluginNotExistsException, ArtifactNotFoundException {
+    SortedMap<ArtifactDescriptor, PluginClass> pluginClasses = artifactStore.getPluginClasses(
+      artifactId, pluginType, pluginName);
+    SortedMap<ArtifactId, PluginClass> artifactIds = Maps.newTreeMap();
+    for (Map.Entry<ArtifactDescriptor, PluginClass> pluginClassEntry : pluginClasses.entrySet()) {
+      artifactIds.put(pluginClassEntry.getKey().getArtifactId(), pluginClassEntry.getValue());
+    }
+    Map.Entry<ArtifactId, PluginClass> chosenArtifact = selector.select(artifactIds);
+    if (chosenArtifact == null) {
+      throw new PluginNotExistsException(artifactId, pluginType, pluginName);
+    }
+
+    for (Map.Entry<ArtifactDescriptor, PluginClass> pluginClassEntry : pluginClasses.entrySet()) {
+      if (pluginClassEntry.getKey().getArtifactId().compareTo(chosenArtifact.getKey()) == 0) {
+        return pluginClassEntry;
+      }
+    }
+    throw new PluginNotExistsException(artifactId, pluginType, pluginName);
   }
 
   /**
@@ -272,8 +343,8 @@ public class ArtifactRepository {
       parentClassLoader =
         artifactClassLoaderFactory.createClassLoader(Locations.toLocation(artifactFile));
     } else {
+      validateParentSet(artifactId, parentArtifacts);
       parentClassLoader = createParentClassLoader(artifactId, parentArtifacts);
-      validateParentSet(parentArtifacts);
     }
 
     try {
@@ -312,13 +383,13 @@ public class ArtifactRepository {
   public void addSystemArtifacts() throws IOException, WriteConflictException {
 
     // scan the directory for artifact .jar files and config files for those artifacts
-    List<SystemArtifactConfig> systemArtifacts = new ArrayList<>();
+    List<SystemArtifactInfo> systemArtifacts = new ArrayList<>();
     for (File jarFile : DirUtils.listFiles(systemArtifactDir, "jar")) {
       // parse id from filename
       Id.Artifact artifactId;
       try {
-        artifactId = parse(Id.Namespace.SYSTEM, jarFile.getName());
-      } catch (InvalidArtifactException e) {
+        artifactId = Id.Artifact.parse(Id.Namespace.SYSTEM, jarFile.getName());
+      } catch (IllegalArgumentException e) {
         LOG.warn(String.format("Skipping system artifact '%s' because the name is invalid: ", e.getMessage()));
         continue;
       }
@@ -330,49 +401,78 @@ public class ArtifactRepository {
 
       try {
         // read and parse the config file if it exists. Otherwise use an empty config with the artifact filename
-        SystemArtifactConfig systemArtifactConfig = configFile.isFile() ?
-          SystemArtifactConfig.read(artifactId, configFile, jarFile) :
-          SystemArtifactConfig.builder(artifactId, jarFile).build();
+        ArtifactConfig artifactConfig = configFile.isFile() ?
+          configReader.read(artifactId.getNamespace(), configFile) : new ArtifactConfig();
 
-        validateParentSet(systemArtifactConfig.getParents());
-        validatePluginSet(systemArtifactConfig.getPlugins());
-        systemArtifacts.add(systemArtifactConfig);
+        validateParentSet(artifactId, artifactConfig.getParents());
+        validatePluginSet(artifactConfig.getPlugins());
+        systemArtifacts.add(new SystemArtifactInfo(artifactId, jarFile, artifactConfig));
       } catch (InvalidArtifactException e) {
         LOG.warn(String.format("Could not add system artifact '%s' because it is invalid.", artifactFileName), e);
       }
     }
 
-    // Need to be sure to add parent artifacts before artifacts that extend them.
-    // Sorting will accomplish this because SystemArtifactConfig is comparable based on parents
-    Collections.sort(systemArtifacts);
+    // taking advantage of the fact that we only have 1 level of dependencies
+    // so we can add all the parents first, then we know its safe to add everything else
+    // add all parents
+    Set<Id.Artifact> parents = new HashSet<>();
+    for (SystemArtifactInfo child : systemArtifacts) {
+      Id.Artifact childId = child.getArtifactId();
 
-    for (SystemArtifactConfig systemArtifactConfig : systemArtifacts) {
-      String fileName = systemArtifactConfig.getFile().getName();
-      try {
-        Id.Artifact artifactId = systemArtifactConfig.getArtifactId();
-
-        // if it's not a snapshot and it already exists, don't bother trying to add it since artifacts are immutable
-        if (!artifactId.getVersion().isSnapshot()) {
-          try {
-            artifactStore.getArtifact(artifactId);
-            continue;
-          } catch (ArtifactNotFoundException e) {
-            // this is fine, means it doesn't exist yet and we should add it
-          }
+      for (SystemArtifactInfo potentialParent : systemArtifacts) {
+        Id.Artifact potentialParentId = potentialParent.getArtifactId();
+        // skip if we're looking at ourselves
+        if (childId.equals(potentialParentId)) {
+          continue;
         }
 
-        addArtifact(artifactId,
-                    systemArtifactConfig.getFile(),
-                    systemArtifactConfig.getParents(),
-                    systemArtifactConfig.getPlugins());
-      } catch (ArtifactAlreadyExistsException e) {
-        // shouldn't happen... but if it does for some reason it's fine, it means it was added some other way already.
-      } catch (ArtifactRangeNotFoundException e) {
-        LOG.warn(String.format("Could not add system artifact '%s' because it extends artifacts that do not exist.",
-          fileName), e);
-      } catch (InvalidArtifactException e) {
-        LOG.warn(String.format("Could not add system artifact '%s' because it is invalid.", fileName), e);
+        if (child.getConfig().hasParent(potentialParentId)) {
+          parents.add(potentialParentId);
+        }
       }
+    }
+
+    // add all parents first
+    for (SystemArtifactInfo systemArtifact : systemArtifacts) {
+      if (parents.contains(systemArtifact.getArtifactId())) {
+        addSystemArtifact(systemArtifact);
+      }
+    }
+
+    // add children next
+    for (SystemArtifactInfo systemArtifact : systemArtifacts) {
+      if (!parents.contains(systemArtifact.getArtifactId())) {
+        addSystemArtifact(systemArtifact);
+      }
+    }
+  }
+
+  private void addSystemArtifact(SystemArtifactInfo systemArtifactInfo) throws IOException, WriteConflictException {
+    String fileName = systemArtifactInfo.getArtifactFile().getName();
+    try {
+      Id.Artifact artifactId = systemArtifactInfo.getArtifactId();
+
+      // if it's not a snapshot and it already exists, don't bother trying to add it since artifacts are immutable
+      if (!artifactId.getVersion().isSnapshot()) {
+        try {
+          artifactStore.getArtifact(artifactId);
+          return;
+        } catch (ArtifactNotFoundException e) {
+          // this is fine, means it doesn't exist yet and we should add it
+        }
+      }
+
+      addArtifact(artifactId,
+        systemArtifactInfo.getArtifactFile(),
+        systemArtifactInfo.getConfig().getParents(),
+        systemArtifactInfo.getConfig().getPlugins());
+    } catch (ArtifactAlreadyExistsException e) {
+      // shouldn't happen... but if it does for some reason it's fine, it means it was added some other way already.
+    } catch (ArtifactRangeNotFoundException e) {
+      LOG.warn(String.format("Could not add system artifact '%s' because it extends artifacts that do not exist.",
+        fileName), e);
+    } catch (InvalidArtifactException e) {
+      LOG.warn(String.format("Could not add system artifact '%s' because it is invalid.", fileName), e);
     }
   }
 
@@ -386,43 +486,10 @@ public class ArtifactRepository {
     artifactStore.delete(artifactId);
   }
 
-  /**
-   * Parses a string expected to be of the form {name}-{version}.jar into an {@link co.cask.cdap.proto.Id.Artifact},
-   * where name is a valid id and version is of the form expected by {@link ArtifactVersion}.
-   *
-   * @param namespace the namespace to use
-   * @param artifactStr the string to parse
-   * @return string parsed into an {@link co.cask.cdap.proto.Id.Artifact}
-   * @throws InvalidArtifactException if the string is not in the expected format
-   */
-  public static Id.Artifact parse(Id.Namespace namespace, String artifactStr) throws InvalidArtifactException {
-    if (!artifactStr.endsWith(".jar")) {
-      throw new InvalidArtifactException(String.format("Artifact name '%s' does not end in .jar", artifactStr));
-    }
-
-    // strip '.jar' from the filename
-    artifactStr = artifactStr.substring(0, artifactStr.length() - ".jar".length());
-
-    // true means try and match version as the end of the string
-    ArtifactVersion artifactVersion = new ArtifactVersion(artifactStr, true);
-    String rawVersion = artifactVersion.getVersion();
-    // this happens if it could not parse the version
-    if (rawVersion == null) {
-      throw new InvalidArtifactException(
-        String.format("Artifact name '%s' is not of the form {name}-{version}.jar", artifactStr));
-    }
-
-    // filename should be {name}-{version}.  Strip -{version} from it to get artifact name
-    String artifactName = artifactStr.substring(0, artifactStr.length() - rawVersion.length() - 1);
-    return Id.Artifact.from(namespace, artifactName, rawVersion);
-  }
-
   // convert details to summaries (to hide location and other unnecessary information)
   private List<ArtifactSummary> convertAndAdd(List<ArtifactSummary> summaries, Iterable<ArtifactDetail> details) {
     for (ArtifactDetail detail : details) {
-      ArtifactDescriptor descriptor = detail.getDescriptor();
-      summaries.add(
-        new ArtifactSummary(descriptor.getName(), descriptor.getVersion().getVersion(), descriptor.isSystem()));
+      summaries.add(ArtifactSummary.from(detail.getDescriptor().getArtifactId()));
     }
     return summaries;
   }
@@ -464,9 +531,9 @@ public class ArtifactRepository {
         isInvalid = true;
         errMsg
           .append(" Parent '")
-          .append(parent.getDescriptor().getName())
+          .append(parent.getDescriptor().getArtifactId().getName())
           .append("-")
-          .append(parent.getDescriptor().getVersion().getVersion())
+          .append(parent.getDescriptor().getArtifactId().getVersion().getVersion())
           .append("' has parents.");
       }
     }
@@ -480,6 +547,17 @@ public class ArtifactRepository {
     return artifactClassLoaderFactory.createClassLoader(parentLocation);
   }
 
+  private void addAppSummaries(List<ApplicationClassSummary> summaries, Id.Namespace namespace) {
+    for (Map.Entry<ArtifactDescriptor, List<ApplicationClass>> classInfo :
+      artifactStore.getApplicationClasses(namespace).entrySet()) {
+      ArtifactSummary artifactSummary = ArtifactSummary.from(classInfo.getKey().getArtifactId());
+
+      for (ApplicationClass appClass : classInfo.getValue()) {
+        summaries.add(new ApplicationClassSummary(artifactSummary, appClass.getClassName()));
+      }
+    }
+  }
+
   /**
    * Validates the parents of an artifact. Checks that each artifact only appears with a single version range.
    *
@@ -487,7 +565,7 @@ public class ArtifactRepository {
    * @throws InvalidArtifactException if there is more than one version range for an artifact
    */
   @VisibleForTesting
-  static void validateParentSet(Set<ArtifactRange> parents) throws InvalidArtifactException {
+  static void validateParentSet(Id.Artifact artifactId, Set<ArtifactRange> parents) throws InvalidArtifactException {
     boolean isInvalid = false;
     StringBuilder errMsg = new StringBuilder("Invalid parents field.");
 
@@ -504,6 +582,10 @@ public class ArtifactRepository {
         errMsg.append("' can be present.");
         dupes.add(parentName);
         isInvalid = true;
+      }
+      if (artifactId.getName().equals(parentName) && artifactId.getNamespace().equals(parent.getNamespace())) {
+        throw new InvalidArtifactException(String.format(
+          "Invalid parent '%s' for artifact '%s'. An artifact cannot extend itself.", parent, artifactId));
       }
     }
 

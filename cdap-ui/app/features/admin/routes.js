@@ -1,3 +1,19 @@
+/*
+ * Copyright © 2015 Cask Data, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
 angular.module(PKG.name + '.feature.admin')
   .config(function($stateProvider, $urlRouterProvider, MYAUTH_ROLE) {
 
@@ -18,8 +34,7 @@ angular.module(PKG.name + '.feature.admin')
           templateUrl: '/assets/features/admin/templates/overview.html',
           controller: 'OverviewController',
           ncyBreadcrumb: {
-            label: 'Management',
-            parent: 'overview'
+            label: 'Management'
           }
         })
 
@@ -141,6 +156,40 @@ angular.module(PKG.name + '.feature.admin')
                 parent: 'admin.namespace.detail.settings'
               }
             })
+
+            .state('admin.namespace.detail.templateslist', {
+              url: '/templates',
+              templateUrl: '/assets/features/admin/templates/namespace/templates-list.html',
+              controller: 'NamespaceTemplatesListController',
+              controllerAs: 'TemplatesListController',
+              ncyBreadcrumb: {
+                label: 'Templates',
+                parent: 'admin.namespace.detail.settings'
+              }
+            })
+
+            .state('admin.namespace.detail.templates', {
+              url: '/templates/create',
+              templateUrl: '/assets/features/admin/templates/namespace/templates.html',
+              controller: 'NamespaceTemplatesController',
+              controllerAs: 'TemplatesController',
+              ncyBreadcrumb: {
+                label: 'Create',
+                parent: 'admin.namespace.detail.templateslist'
+              }
+            })
+
+            .state('admin.namespace.detail.templateedit', {
+              url: '/templates/edit/:templateType/:pluginType/:pluginTemplate',
+              templateUrl: '/assets/features/admin/templates/namespace/templates.html',
+              controller: 'NamespaceTemplatesController',
+              controllerAs: 'TemplatesController',
+              ncyBreadcrumb: {
+                label: '{{$state.params.pluginTemplate}}',
+                parent: 'admin.namespace.detail.templateslist'
+              }
+            })
+
 
             .state('admin.namespace.detail.metadata', {
               url: '/metadata',

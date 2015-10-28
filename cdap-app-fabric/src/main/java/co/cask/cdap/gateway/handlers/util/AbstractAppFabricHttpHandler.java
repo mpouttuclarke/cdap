@@ -17,13 +17,11 @@
 package co.cask.cdap.gateway.handlers.util;
 
 import co.cask.cdap.api.ProgramSpecification;
-import co.cask.cdap.app.ApplicationSpecification;
+import co.cask.cdap.api.app.ApplicationSpecification;
 import co.cask.cdap.app.runtime.ProgramRuntimeService;
 import co.cask.cdap.app.store.Store;
-import co.cask.cdap.common.NamespaceNotFoundException;
 import co.cask.cdap.internal.UserErrors;
 import co.cask.cdap.internal.UserMessages;
-import co.cask.cdap.proto.ApplicationRecord;
 import co.cask.cdap.proto.Id;
 import co.cask.cdap.proto.Instances;
 import co.cask.cdap.proto.ProgramRecord;
@@ -107,9 +105,6 @@ public abstract class AbstractAppFabricHttpHandler extends AbstractHttpHandler {
     public static final AppFabricServiceStatus INTERNAL_ERROR =
       new AppFabricServiceStatus(HttpResponseStatus.INTERNAL_SERVER_ERROR, "Internal server error");
 
-    public static final AppFabricServiceStatus ADAPTER_CONFLICT =
-      new AppFabricServiceStatus(HttpResponseStatus.FORBIDDEN, "An ApplicationTemplate exists with conflicting name.");
-
     private final HttpResponseStatus code;
     private final String message;
 
@@ -172,22 +167,8 @@ public abstract class AbstractAppFabricHttpHandler extends AbstractHttpHandler {
     }
   }
 
-  protected final void getAppRecords(HttpResponder responder, Store store,
-                                     String namespaceId) throws NamespaceNotFoundException {
-    Id.Namespace namespace = Id.Namespace.from(namespaceId);
-    if (store.getNamespace(namespace) == null) {
-      throw new NamespaceNotFoundException(namespace);
-    }
-
-    List<ApplicationRecord> appRecords = new ArrayList<>();
-    for (ApplicationSpecification appSpec : store.getAllApplications(namespace)) {
-      appRecords.add(new ApplicationRecord(appSpec.getName(), appSpec.getVersion(), appSpec.getDescription()));
-    }
-
-    responder.sendJson(HttpResponseStatus.OK, appRecords);
-  }
-
-  protected final void programList(HttpResponder responder, String namespaceId, ProgramType type, Store store) {
+  protected final void programList(HttpResponder responder, String namespaceId, ProgramType type,
+                                   Store store) throws Exception {
     try {
       Id.Namespace namespace = Id.Namespace.from(namespaceId);
       List<ProgramRecord> programRecords = listPrograms(namespace, type, store);
@@ -199,9 +180,6 @@ public abstract class AbstractAppFabricHttpHandler extends AbstractHttpHandler {
       }
     } catch (SecurityException e) {
       responder.sendStatus(HttpResponseStatus.UNAUTHORIZED);
-    } catch (Throwable e) {
-      LOG.error("Got exception: ", e);
-      responder.sendStatus(HttpResponseStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -292,9 +270,6 @@ public abstract class AbstractAppFabricHttpHandler extends AbstractHttpHandler {
       responder.sendJson(HttpResponseStatus.OK, runtimeService.getLiveInfo(programId));
     } catch (SecurityException e) {
       responder.sendStatus(HttpResponseStatus.UNAUTHORIZED);
-    } catch (Throwable e) {
-      LOG.error("Got exception:", e);
-      responder.sendStatus(HttpResponseStatus.INTERNAL_SERVER_ERROR);
     }
   }
 

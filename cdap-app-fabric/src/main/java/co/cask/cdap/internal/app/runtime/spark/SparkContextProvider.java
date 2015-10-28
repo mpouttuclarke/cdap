@@ -18,6 +18,7 @@ package co.cask.cdap.internal.app.runtime.spark;
 
 import co.cask.cdap.api.metrics.MetricsCollectionService;
 import co.cask.cdap.common.conf.CConfiguration;
+import co.cask.cdap.common.conf.Constants;
 import co.cask.cdap.common.guice.ConfigModule;
 import co.cask.cdap.common.guice.DiscoveryRuntimeModule;
 import co.cask.cdap.common.guice.IOModule;
@@ -30,13 +31,17 @@ import co.cask.cdap.data.runtime.DataFabricModules;
 import co.cask.cdap.data.runtime.DataSetsModules;
 import co.cask.cdap.data.stream.StreamAdminModules;
 import co.cask.cdap.data.stream.StreamCoordinatorClient;
+import co.cask.cdap.data.view.ViewAdminModules;
 import co.cask.cdap.data2.dataset2.DatasetFramework;
 import co.cask.cdap.data2.transaction.stream.StreamAdmin;
+import co.cask.cdap.explore.guice.ExploreClientModule;
+import co.cask.cdap.internal.app.runtime.plugin.PluginInstantiator;
 import co.cask.cdap.logging.appender.LogAppenderInitializer;
 import co.cask.cdap.logging.guice.LoggingModules;
 import co.cask.cdap.metrics.guice.MetricsClientRuntimeModule;
 import co.cask.cdap.notifications.feeds.guice.NotificationFeedServiceRuntimeModule;
 import co.cask.cdap.proto.ProgramType;
+import co.cask.tephra.TransactionSystemClient;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.AbstractService;
@@ -55,6 +60,7 @@ import java.net.MalformedURLException;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 
 /**
  * Helper class for locating {@link ExecutionSparkContext} from the execution context.
@@ -112,7 +118,7 @@ public final class SparkContextProvider {
                                "SparkContextProvider.getSparkContext should only be called in Spark executor process.");
 
       // Create the program ClassLoader
-      ProgramClassLoader classLoader = ProgramClassLoader.create(new File(PROGRAM_JAR_NAME),
+      ProgramClassLoader classLoader = ProgramClassLoader.create(cConf, new File(PROGRAM_JAR_NAME),
                                                                  SparkClassLoader.class.getClassLoader(),
                                                                  ProgramType.SPARK);
       Injector injector = createInjector(cConf, hConf);
@@ -148,13 +154,16 @@ public final class SparkContextProvider {
         }
       });
 
+      PluginInstantiator pluginInstantiator = createPluginInstantiator(cConf, hConf, classLoader);
       // Create the context object
       sparkContext = new ExecutionSparkContext(
+        contextConfig.getApplicationSpecification(),
         contextConfig.getSpecification(), contextConfig.getProgramId(), contextConfig.getRunId(),
         classLoader, contextConfig.getLogicalStartTime(), contextConfig.getArguments(),
         contextConfig.getTransaction(), injector.getInstance(DatasetFramework.class),
+        injector.getInstance(TransactionSystemClient.class),
         injector.getInstance(DiscoveryServiceClient.class), metricsCollectionService, hConf,
-        injector.getInstance(StreamAdmin.class), contextConfig.getWorkflowToken()
+        injector.getInstance(StreamAdmin.class), pluginInstantiator, contextConfig.getWorkflowToken()
       );
       return sparkContext;
     } catch (Exception e) {
@@ -163,10 +172,7 @@ public final class SparkContextProvider {
   }
 
   private static CConfiguration createCConf() throws MalformedURLException {
-    CConfiguration cConf = CConfiguration.create();
-    cConf.clear();
-    cConf.addResource(new File(CCONF_FILE_NAME).toURI().toURL());
-    return cConf;
+    return CConfiguration.create(new File(CCONF_FILE_NAME));
   }
 
   private static Configuration createHConf() throws MalformedURLException {
@@ -174,6 +180,16 @@ public final class SparkContextProvider {
     hConf.clear();
     hConf.addResource(new File(HCONF_FILE_NAME).toURI().toURL());
     return hConf;
+  }
+
+  @Nullable
+  private static PluginInstantiator createPluginInstantiator(CConfiguration cConf, Configuration hConf,
+                                                             ClassLoader parentClassLoader) {
+    String pluginArchive = hConf.get(Constants.Plugin.ARCHIVE);
+    if (pluginArchive == null) {
+      return null;
+    }
+    return new PluginInstantiator(cConf, parentClassLoader, new File(pluginArchive));
   }
 
   private static Injector createInjector(CConfiguration cConf, Configuration hConf) {
@@ -188,6 +204,8 @@ public final class SparkContextProvider {
       new DataSetsModules().getDistributedModules(),
       new MetricsClientRuntimeModule().getDistributedModules(),
       new LoggingModules().getDistributedModules(),
+      new ExploreClientModule(),
+      new ViewAdminModules().getDistributedModules(),
       new StreamAdminModules().getDistributedModules(),
       new NotificationFeedServiceRuntimeModule().getDistributedModules()
     );

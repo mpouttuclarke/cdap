@@ -18,10 +18,11 @@ package co.cask.cdap.client;
 
 import co.cask.cdap.api.artifact.ApplicationClass;
 import co.cask.cdap.api.artifact.ArtifactClasses;
+import co.cask.cdap.api.artifact.ArtifactScope;
 import co.cask.cdap.api.artifact.ArtifactVersion;
 import co.cask.cdap.api.data.schema.Schema;
-import co.cask.cdap.api.templates.plugins.PluginClass;
-import co.cask.cdap.api.templates.plugins.PluginPropertyField;
+import co.cask.cdap.api.plugin.PluginClass;
+import co.cask.cdap.api.plugin.PluginPropertyField;
 import co.cask.cdap.app.program.ManifestFields;
 import co.cask.cdap.client.artifact.MyApp;
 import co.cask.cdap.client.artifact.plugin.Plugin1;
@@ -34,6 +35,8 @@ import co.cask.cdap.internal.io.ReflectionSchemaGenerator;
 import co.cask.cdap.internal.test.AppJarHelper;
 import co.cask.cdap.internal.test.PluginJarHelper;
 import co.cask.cdap.proto.Id;
+import co.cask.cdap.proto.artifact.ApplicationClassInfo;
+import co.cask.cdap.proto.artifact.ApplicationClassSummary;
 import co.cask.cdap.proto.artifact.ArtifactInfo;
 import co.cask.cdap.proto.artifact.ArtifactRange;
 import co.cask.cdap.proto.artifact.ArtifactSummary;
@@ -41,6 +44,7 @@ import co.cask.cdap.proto.artifact.PluginInfo;
 import co.cask.cdap.proto.artifact.PluginSummary;
 import co.cask.cdap.test.XSlowTests;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.io.InputSupplier;
@@ -82,7 +86,7 @@ public class ArtifactClientTestRun extends ClientTestBase {
   public void setUp() throws Throwable {
     super.setUp();
     artifactClient = new ArtifactClient(clientConfig, new RESTClient(clientConfig));
-    for (ArtifactSummary artifactSummary : artifactClient.list(Id.Namespace.DEFAULT, false)) {
+    for (ArtifactSummary artifactSummary : artifactClient.list(Id.Namespace.DEFAULT)) {
       artifactClient.delete(
         Id.Artifact.from(Id.Namespace.DEFAULT, artifactSummary.getName(), artifactSummary.getVersion()));
     }
@@ -90,6 +94,7 @@ public class ArtifactClientTestRun extends ClientTestBase {
 
   @Test
   public void testNotFound() throws Exception {
+    Id.Artifact ghostId = Id.Artifact.from(Id.Namespace.DEFAULT, "ghost", "1.0.0");
     try {
       artifactClient.list(Id.Namespace.from("ghost"));
       Assert.fail();
@@ -98,14 +103,14 @@ public class ArtifactClientTestRun extends ClientTestBase {
     }
 
     try {
-      artifactClient.getArtifactInfo(Id.Artifact.from(Id.Namespace.DEFAULT, "ghost", "1.0.0"));
+      artifactClient.getArtifactInfo(ghostId);
       Assert.fail();
     } catch (ArtifactNotFoundException e) {
       // expected
     }
 
     try {
-      artifactClient.listVersions(Id.Namespace.DEFAULT, "ghost");
+      artifactClient.listVersions(ghostId.getNamespace(), ghostId.getName());
       Assert.fail();
     } catch (ArtifactNotFoundException e) {
       // expected
@@ -113,9 +118,30 @@ public class ArtifactClientTestRun extends ClientTestBase {
 
     // test adding an artifact that extends a non-existent artifact
     Set<ArtifactRange> parents = Sets.newHashSet(
-      new ArtifactRange(Id.Namespace.DEFAULT, "ghost", new ArtifactVersion("1"), new ArtifactVersion("2")));
+      new ArtifactRange(ghostId.getNamespace(), ghostId.getName(), new ArtifactVersion("1"), new ArtifactVersion("2")));
     try {
       artifactClient.add(Id.Namespace.DEFAULT, "abc", DUMMY_SUPPLIER, "1.0.0", parents);
+      Assert.fail();
+    } catch (NotFoundException e) {
+      // expected
+    }
+
+    try {
+      artifactClient.getPluginTypes(ghostId);
+      Assert.fail();
+    } catch (ArtifactNotFoundException e) {
+      // expected
+    }
+
+    try {
+      artifactClient.getPluginSummaries(ghostId, "type");
+      Assert.fail();
+    } catch (ArtifactNotFoundException e) {
+      // expected
+    }
+
+    try {
+      artifactClient.getPluginInfo(ghostId, "type", "name");
       Assert.fail();
     } catch (NotFoundException e) {
       // expected
@@ -135,6 +161,18 @@ public class ArtifactClientTestRun extends ClientTestBase {
     // test bad name
     try {
       artifactClient.add(Id.Namespace.DEFAULT, "ab:c", DUMMY_SUPPLIER, "1.0.0");
+      Assert.fail();
+    } catch (BadRequestException e) {
+      // expected
+    }
+  }
+
+  @Test
+  public void testAddSelfExtendingThrowsBadRequest() throws Exception {
+    try {
+      artifactClient.add(Id.Namespace.DEFAULT, "abc", DUMMY_SUPPLIER, "1.0.0", Sets.newHashSet(
+        new ArtifactRange(Id.Namespace.DEFAULT, "abc", new ArtifactVersion("1.0.0"), new ArtifactVersion("2.0.0"))
+      ));
       Assert.fail();
     } catch (BadRequestException e) {
       // expected
@@ -180,10 +218,9 @@ public class ArtifactClientTestRun extends ClientTestBase {
     artifactClient.add(pluginId.getNamespace(), pluginId.getName(), inputSupplier,
                        pluginId.getVersion().getVersion(), parents, additionalPlugins);
 
-    ArtifactSummary myapp1Summary = new ArtifactSummary(myapp1Id.getName(), myapp1Id.getVersion().getVersion(), false);
-    ArtifactSummary myapp2Summary = new ArtifactSummary(myapp2Id.getName(), myapp2Id.getVersion().getVersion(), false);
-    ArtifactSummary pluginArtifactSummary =
-      new ArtifactSummary(pluginId.getName(), pluginId.getVersion().getVersion(), false);
+    ArtifactSummary myapp1Summary = new ArtifactSummary(myapp1Id.getName(), myapp1Id.getVersion().getVersion());
+    ArtifactSummary myapp2Summary = new ArtifactSummary(myapp2Id.getName(), myapp2Id.getVersion().getVersion());
+    ArtifactSummary pluginArtifactSummary = new ArtifactSummary(pluginId.getName(), pluginId.getVersion().getVersion());
 
     Set<ArtifactSummary> artifacts = Sets.newHashSet(artifactClient.list(Id.Namespace.DEFAULT));
     Assert.assertEquals(Sets.newHashSet(myapp1Summary, myapp2Summary, pluginArtifactSummary), artifacts);
@@ -194,21 +231,28 @@ public class ArtifactClientTestRun extends ClientTestBase {
     // list all artifacts named 'myapp-plugins'
     Assert.assertEquals(Sets.newHashSet(pluginArtifactSummary),
                         Sets.newHashSet(artifactClient.listVersions(Id.Namespace.DEFAULT, pluginId.getName())));
+    // artifacts should be in user scope
+    try {
+      artifactClient.listVersions(Id.Namespace.DEFAULT, pluginId.getName(), ArtifactScope.SYSTEM);
+      Assert.fail();
+    } catch (ArtifactNotFoundException e) {
+      // expected
+    }
 
     // get info about specific artifacts
-    Schema myAppConfigSchema = new ReflectionSchemaGenerator().generate(MyApp.Conf.class);
+    Schema myAppConfigSchema = new ReflectionSchemaGenerator(false).generate(MyApp.Conf.class);
     ArtifactClasses myAppClasses = ArtifactClasses.builder()
       .addApp(new ApplicationClass(MyApp.class.getName(), "", myAppConfigSchema))
       .build();
 
     // test get myapp-1.0.0
     ArtifactInfo myapp1Info =
-      new ArtifactInfo(myapp1Id.getName(), myapp1Id.getVersion().getVersion(), false, myAppClasses);
+      new ArtifactInfo(myapp1Id.getName(), myapp1Id.getVersion().getVersion(), ArtifactScope.USER, myAppClasses);
     Assert.assertEquals(myapp1Info, artifactClient.getArtifactInfo(myapp1Id));
 
     // test get myapp-2.0.0
     ArtifactInfo myapp2Info =
-      new ArtifactInfo(myapp2Id.getName(), myapp2Id.getVersion().getVersion(), false, myAppClasses);
+      new ArtifactInfo(myapp2Id.getName(), myapp2Id.getVersion().getVersion(), ArtifactScope.USER, myAppClasses);
     Assert.assertEquals(myapp2Info, artifactClient.getArtifactInfo(myapp2Id));
 
     // test get myapp-plugins-2.0.0
@@ -219,8 +263,26 @@ public class ArtifactClientTestRun extends ClientTestBase {
       .addPlugins(additionalPlugins)
       .build();
     ArtifactInfo pluginArtifactInfo =
-      new ArtifactInfo(pluginId.getName(), pluginId.getVersion().getVersion(), false, pluginClasses);
+      new ArtifactInfo(pluginId.getName(), pluginId.getVersion().getVersion(), ArtifactScope.USER, pluginClasses);
     Assert.assertEquals(pluginArtifactInfo, artifactClient.getArtifactInfo(pluginId));
+
+    // test get all app classes in namespace
+    Set<ApplicationClassSummary> expectedSummaries = ImmutableSet.of(
+      new ApplicationClassSummary(myapp1Summary, MyApp.class.getName()),
+      new ApplicationClassSummary(myapp2Summary, MyApp.class.getName())
+    );
+    Set<ApplicationClassSummary> appClassSummaries = Sets.newHashSet(
+      artifactClient.getApplicationClasses(Id.Namespace.DEFAULT));
+    Assert.assertEquals(expectedSummaries, appClassSummaries);
+
+    // test get all app classes in namespace with name MyApp.class.getName()
+    Set<ApplicationClassInfo> appClassInfos = Sets.newHashSet(
+      artifactClient.getApplicationClasses(Id.Namespace.DEFAULT, MyApp.class.getName()));
+    Set<ApplicationClassInfo> expectedInfos = ImmutableSet.of(
+      new ApplicationClassInfo(myapp1Summary, MyApp.class.getName(), myAppConfigSchema),
+      new ApplicationClassInfo(myapp2Summary, MyApp.class.getName(), myAppConfigSchema)
+    );
+    Assert.assertEquals(expectedInfos, appClassInfos);
 
     // test get plugin types for myapp-1.0.0. should be empty, since plugins only extends versions [2.0.0 - 3.0.0)
     Assert.assertTrue(artifactClient.getPluginTypes(myapp1Id).isEmpty());

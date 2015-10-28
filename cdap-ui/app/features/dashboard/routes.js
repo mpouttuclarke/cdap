@@ -1,3 +1,19 @@
+/*
+ * Copyright © 2015 Cask Data, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
 angular.module(PKG.name+'.feature.dashboard')
   .config(function ($stateProvider, $urlRouterProvider, MYAUTH_ROLE) {
 
@@ -36,16 +52,12 @@ angular.module(PKG.name+'.feature.dashboard')
         templateUrl: '/assets/features/dashboard/templates/staticdashboard.html',
         controller: 'OpsCdapCtrl',
         ncyBreadcrumb: {
-          label: 'System',
-          parent: 'overview'
+          label: 'Operations'
         }
       })
 
       .state('dashboard.user', {
         url: '/user/:tab',
-        params: {
-          activeDashboard: null
-        },
         templateUrl: '/assets/features/dashboard/templates/userdashboard.html',
         controller: 'UserDashboardCtrl',
         resolve: {
@@ -54,20 +66,24 @@ angular.module(PKG.name+'.feature.dashboard')
           }
         },
         ncyBreadcrumb: {
-          label: '{{$state.params.activeDashboard}}',
-          parent: 'overview'
+          label: 'Operations'
         }
       })
 
       .state('dashboard.user.addwdgt', {
         url: '/widget/add',
-        onEnter: function ($state, $bootstrapModal, $rootScope, rDashboardsModel, tab) {
+        onEnter: function ($stateParams, $state, $bootstrapModal, $rootScope, rDashboardsModel, tab) {
           var scope = $rootScope.$new();
-          scope.currentBoard = rDashboardsModel.current();
+          var currentBoard = rDashboardsModel.data[$stateParams.tab];
+          scope.currentBoard = currentBoard;
+          scope.metricsLimit = currentBoard.WIDGET_LIMIT;
+          scope.metricsSlotsFilled = currentBoard.columns.length;
+
           $bootstrapModal.open({
             templateUrl: '/assets/features/dashboard/templates/partials/addwdgt.html',
-            size: 'md',
+            size: 'lg',
             backdrop: true,
+            windowClass: 'cdap-modal',
             keyboard: true,
             scope: scope,
             controller: 'DashboardAddWdgtCtrl'

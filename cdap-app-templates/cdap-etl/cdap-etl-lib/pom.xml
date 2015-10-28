@@ -23,7 +23,7 @@
   <parent>
     <groupId>co.cask.cdap</groupId>
     <artifactId>cdap-etl</artifactId>
-    <version>3.2.0-SNAPSHOT</version>
+    <version>3.3.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>cdap-etl-lib</artifactId>
@@ -40,6 +40,11 @@
     <dependency>
       <groupId>co.cask.cdap</groupId>
       <artifactId>cdap-formats</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>co.cask.cdap</groupId>
+      <artifactId>cdap-etl-common</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -75,7 +80,6 @@
     <dependency>
       <groupId>org.apache.geronimo.specs</groupId>
       <artifactId>geronimo-jms_1.1_spec</artifactId>
-      <version>1.1.1</version>
     </dependency>
     <dependency>
       <groupId>org.apache.activemq</groupId>
@@ -150,23 +154,15 @@
       <artifactId>uadetector-resources</artifactId>
       <version>2014.04</version>
     </dependency>
-    <dependency>
-      <groupId>org.elasticsearch</groupId>
-      <artifactId>elasticsearch-hadoop-mr</artifactId>
-    </dependency>
-    <!-- elasticsearch-hadoop-mr includes a class, StringUtils, which requires commons-httpclient-->
-    <dependency>
-      <groupId>commons-httpclient</groupId>
-      <artifactId>commons-httpclient</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.elasticsearch</groupId>
-      <artifactId>elasticsearch</artifactId>
-    </dependency>
     <!-- Need to add ASM explicitly to override the ASM4 dependency from elasticsearch -->
     <dependency>
       <groupId>org.ow2.asm</groupId>
       <artifactId>asm-all</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>commons-validator</groupId>
+      <artifactId>commons-validator</artifactId>
+      <version>1.4.1</version>
     </dependency>
   </dependencies>
 
@@ -179,15 +175,33 @@
         <extensions>true</extensions>
         <executions>
           <execution>
+            <id>batch-source-bundle</id>
+            <phase>prepare-package</phase>
+            <configuration>
+              <classifier>batch-source</classifier>
+              <instructions>
+                <!-- build bundle jar for batch sources for data quality artifact -->
+                <Export-Package>co.cask.cdap.etl.batch.source.*;co.cask.cdap.etl.common;
+                  org.apache.avro.mapreduce;parquet.avro</Export-Package>
+                <Embed-Dependency>*;inline=false;scope=compile</Embed-Dependency>
+                <Embed-Transitive>true</Embed-Transitive>
+                <Embed-Directory>lib</Embed-Directory>
+              </instructions>
+            </configuration>
+            <goals>
+              <goal>bundle</goal>
+            </goals>
+          </execution>
+          <execution>
             <id>batch-bundle</id>
             <phase>prepare-package</phase>
             <configuration>
               <classifier>batch</classifier>
               <instructions>
                 <!-- build bundle jar for batch. excluding realtime-->
-                <Export-Package>co.cask.cdap.template.etl.batch.*;co.cask.cdap.template.etl.transform.*;
-                  co.cask.cdap.template.etl.common;org.apache.avro.mapreduce;parquet.avro;
-                  org.elasticsearch.hadoop.mr.*</Export-Package>
+                <Export-Package>co.cask.cdap.etl.batch.*;co.cask.cdap.etl.transform.*;
+                  co.cask.cdap.etl.validator.*;
+                  co.cask.cdap.etl.common;org.apache.avro.mapreduce;parquet.avro.*;parquet.hadoop.*</Export-Package>
                 <Embed-Dependency>*;inline=false;scope=compile</Embed-Dependency>
                 <Embed-Transitive>true</Embed-Transitive>
                 <Embed-Directory>lib</Embed-Directory>
@@ -204,8 +218,8 @@
               <classifier>realtime</classifier>
               <instructions>
                 <!-- build bundle jar for realtime. excluding batch-->
-                <Export-Package>co.cask.cdap.template.etl.realtime.*;co.cask.cdap.template.etl.transform.*;
-                  co.cask.cdap.template.etl.common</Export-Package>
+                <Export-Package>co.cask.cdap.etl.realtime.*;co.cask.cdap.etl.transform.*;
+                  co.cask.cdap.etl.validator.*;co.cask.cdap.etl.common</Export-Package>
                 <Embed-Dependency>*;inline=false;scope=compile</Embed-Dependency>
                 <Embed-Transitive>true</Embed-Transitive>
                 <Embed-Directory>lib</Embed-Directory>

@@ -16,9 +16,6 @@
 
 package co.cask.cdap.common.conf;
 
-import co.cask.cdap.proto.Id;
-import co.cask.cdap.proto.NamespaceMeta;
-
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -49,6 +46,7 @@ public final class Constants {
     public static final String SERVICE_INSTANCE_TABLE_NAME = "cdap.services.instances";
     /** Scheduler queue name to submit the master service app. */
     public static final String SCHEDULER_QUEUE = "master.services.scheduler.queue";
+    public static final String METADATA_SERVICE = "metadata.service";
   }
 
   /**
@@ -92,13 +90,12 @@ public final class Constants {
     public static final String EXEC_THREADS = "app.exec.threads";
     public static final String BOSS_THREADS = "app.boss.threads";
     public static final String WORKER_THREADS = "app.worker.threads";
-    public static final String APP_TEMPLATE_DIR = "app.template.dir";
-    public static final String APP_TEMPLATE_PLUGIN_DIR = "app.template.plugin.dir";
     public static final String APP_SCHEDULER_QUEUE = "apps.scheduler.queue";
     public static final String MAPREDUCE_JOB_CLIENT_CONNECT_MAX_RETRIES = "mapreduce.jobclient.connect.max.retries";
     public static final String MAPREDUCE_INCLUDE_CUSTOM_CLASSES = "mapreduce.include.custom.format.classes";
     public static final String PROGRAM_RUNID_CORRECTOR_INTERVAL_SECONDS = "app.program.runid.corrector.interval";
     public static final String SYSTEM_ARTIFACTS_DIR = "app.artifact.dir";
+    public static final String PROGRAM_EXTRA_CLASSPATH = "app.program.extra.classpath";
 
     /**
      * Guice named bindings.
@@ -151,13 +148,24 @@ public final class Constants {
    */
   public class Scheduler {
     public static final String CFG_SCHEDULER_MAX_THREAD_POOL_SIZE = "scheduler.max.thread.pool.size";
-    public static final int DEFAULT_THREAD_POOL_SIZE = 30;
-    public static final String SCHEDULERS_LAZY_START = "schedulers.lazy.start";
-    // TODO: CDAP-2281 remove once unit tests have a better way to handle schedules
-    // lazy start is set in some unit tests so that schedules are suspended right away when created.
-    // including this key with a true value as a schedule property will ignore the suspend behavior and schedules
-    // will be created normally.
-    public static final String IGNORE_LAZY_START = "scheduler.ignore.lazy.start";
+    public static final int DEFAULT_THREAD_POOL_SIZE = 100;
+  }
+
+  /**
+   * Application metadata store.
+   */
+  public static final class AppMetaStore {
+    public static final String TABLE = "app.meta";
+  }
+
+  /**
+   * Plugin Artifacts constants.
+   */
+  public static final class Plugin {
+    public static final String DIRECTORY = "artifacts";
+
+    // Key to be used in hConf to store location of the plugin artifact jar
+    public static final String ARCHIVE = "cdap.program.plugin.archive";
   }
 
   /**
@@ -204,6 +212,14 @@ public final class Constants {
     public static final String DEFAULT_DATA_DIR = "data";
 
     public static final String DATASET_UNCHECKED_UPGRADE = "dataset.unchecked.upgrade";
+
+    /**
+     * Constants for PartitionedFileSet's DynamicPartitioner
+     */
+    public static final class Partitioned {
+      public static final String HCONF_ATTR_OUTPUT_DATASET = "output.dataset.name";
+      public static final String HCONF_ATTR_OUTPUT_FORMAT_CLASS_NAME = "output.format.class.name";
+    }
 
     /**
      * DatasetManager service configuration.
@@ -321,6 +337,13 @@ public final class Constants {
 
     // ZooKeeper namespace in which to keep the coordination metadata
     public static final String STREAM_ZK_COORDINATION_NAMESPACE = String.format("/%s/coordination", Service.STREAMS);
+
+    /**
+     * Stream view constants.
+     */
+    public static final class View {
+      public static final String STORE_TABLE = "explore.stream.view.table";
+    }
   }
 
   /**
@@ -604,6 +627,7 @@ public final class Constants {
     /** Parent znode used for secret key distribution in ZooKeeper. */
     public static final String DIST_KEY_PARENT_ZNODE = "security.token.distributed.parent.znode";
     /** Deprecated. Use AUTH_SERVER_BIND_ADDRESS instead. **/
+    @Deprecated
     public static final String AUTH_SERVER_ADDRESS = "security.auth.server.address";
     /**
      * Address that clients should use to communicate with the Authentication Server.
@@ -693,15 +717,14 @@ public final class Constants {
     public static final String TX_QUERY_KEY = "explore.hive.query.tx.id";
     public static final String TX_QUERY_CLOSED = "explore.hive.query.tx.commited";
     public static final String QUERY_ID = "explore.query.id";
+    public static final String FORMAT_SPEC = "explore.format.specification";
 
     public static final String START_ON_DEMAND = "explore.start.on.demand";
-
     public static final String DATASET_NAME = "explore.dataset.name";
     public static final String DATASET_NAMESPACE = "explore.dataset.namespace";
-    public static final String DATASET_STORAGE_HANDLER_CLASS = "co.cask.cdap.hive.datasets.DatasetStorageHandler";
+    public static final String VIEW_NAME = "explore.view.name";
     public static final String STREAM_NAME = "explore.stream.name";
     public static final String STREAM_NAMESPACE = "explore.stream.namespace";
-    public static final String STREAM_STORAGE_HANDLER_CLASS = "co.cask.cdap.hive.stream.StreamStorageHandler";
     public static final String EXPLORE_CLASSPATH = "explore.classpath";
     public static final String EXPLORE_CONF_FILES = "explore.conf.files";
     public static final String PREVIEWS_DIR_NAME = "explore.previews.dir";
@@ -783,7 +806,6 @@ public final class Constants {
   public static final String CFG_DATA_LEVELDB_CACHESIZE = "data.local.storage.cachesize";
   public static final String CFG_DATA_LEVELDB_FSYNC = "data.local.storage.fsync";
 
-
   /**
    * Defaults for Data Fabric.
    */
@@ -794,28 +816,10 @@ public final class Constants {
   public static final boolean DEFAULT_DATA_LEVELDB_FSYNC = true;
 
   /**
-   * Configuration for Metadata service.
-   */
-  public static final String CFG_RUN_HISTORY_KEEP_DAYS = "metadata.program.run.history.keepdays";
-  public static final int DEFAULT_RUN_HISTORY_KEEP_DAYS = 30;
-
-  /**
    * Config for Log Collection.
    */
   public static final String CFG_LOG_COLLECTION_ROOT = "log.collection.root";
   public static final String DEFAULT_LOG_COLLECTION_ROOT = "data/logs";
-  public static final String CFG_LOG_COLLECTION_PORT = "log.collection.bind.port";
-  public static final int DEFAULT_LOG_COLLECTION_PORT = 12157;
-  public static final String CFG_LOG_COLLECTION_THREADS = "log.collection.threads";
-  public static final int DEFAULT_LOG_COLLECTION_THREADS = 10;
-  public static final String CFG_LOG_COLLECTION_SERVER_ADDRESS = "log.collection.bind.address";
-  public static final String DEFAULT_LOG_COLLECTION_SERVER_ADDRESS = "localhost";
-
-  /**
-   * Constants related to Passport.
-   */
-  public static final String CFG_APPFABRIC_ENVIRONMENT = "appfabric.environment";
-  public static final String DEFAULT_APPFABRIC_ENVIRONMENT = "devsuite";
 
   /**
    * Used for upgrade and backwards compatability
@@ -877,5 +881,20 @@ public final class Constants {
    */
   public static final class Namespace {
     public static final String NAMESPACES_DIR = "namespaces.dir";
+  }
+
+  /**
+   * Constants for metadata service
+   */
+  public static final class Metadata {
+    public static final String SERVICE_DESCRIPTION = "Service to perform metadata operations.";
+    public static final String SERVICE_BIND_ADDRESS = "metadata.service.bind.address";
+    public static final String SERVICE_WORKER_THREADS = "metadata.service.worker.threads";
+    public static final String SERVICE_EXEC_THREADS = "metadata.service.exec.threads";
+    public static final String HANDLERS_NAME = "metadata.handlers";
+    public static final String UPDATES_KAFKA_TOPIC = "metadata.updates.kafka.topic";
+    public static final String UPDATES_PUBLISH_ENABLED = "metadata.updates.publish.enabled";
+    public static final String UPDATES_KAFKA_BROKER_LIST = "metadata.updates.kafka.broker.list";
+    public static final String MAX_CHARS_ALLOWED = "metadata.max.allowed.chars";
   }
 }

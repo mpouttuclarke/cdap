@@ -1,22 +1,42 @@
 {
-  "ETLRealtime": [
+  "cdap-etl-realtime": [
     {
-      "name": "Kafka To HBase Table",
-      "file": "KafkaToHBaseTableETL-ETLRealtime.json",
-      "description" : "Ingests data from Kafka into HBase"
+      "name": "Kafka To HBase",
+      "file": "KafkaToHBase.json",
+      "description" : "Ingests in realtime from Kafka into HBase"
+    },
+    {
+      "name": "Kafka To Stream",
+      "file": "KafkaToStream.json",
+      "description" : "Ingests in realtime from Kafka into Stream"
+    },
+    {
+      "name": "Kafka To OLAP Cube",
+      "file": "KafkaToOLAPCube.json",
+      "description" : "Generate OLAP Cube in realtime for events coming from Kafka"
+    },
+    {
+      "name": "Twitter to HBase",
+      "file": "TwitterToHBase.json",
+      "description": "Ingest Realtime Twitter Stream into HBase"
+    },
+    {
+      "name": "Twitter to Stream",
+      "file": "TwitterToStream.json",
+      "description": "Realtime stream Twitter data into a HBase Table."
+    },
+    { 
+      "name": "Amazon Simple Queue Service to HBase",
+      "file": "AmazonSQSToHBase.json",
+      "description" : "Realtime updates from Amazon Simple Queue Service to HBase."
     }
   ],
-  "ETLBatch" : [
+  "cdap-etl-batch" : [
      {
-       "name" : "Stream2Table",
+       "name" : "StreamToTable",
        "description" : "Ingests data from stream into a hbase table",
-       "file" : "AppendStreamToTableWithProjections-ETLBatch.json"
-     },
-
-     {
-       "name" : "Contact ETL",
-       "description" : "ETL Contacts from stream into Time partitioned AVRO",
-       "file" : "ETLContactsInToElasticSearch-ETLBatch.json"
+       "file" : "StreamToHBase.json"
      }
   ]
 }
+

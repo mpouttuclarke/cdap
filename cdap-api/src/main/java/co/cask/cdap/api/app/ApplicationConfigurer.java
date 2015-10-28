@@ -16,9 +16,9 @@
 
 package co.cask.cdap.api.app;
 
-import co.cask.cdap.api.DatasetConfigurer;
 import co.cask.cdap.api.flow.Flow;
 import co.cask.cdap.api.mapreduce.MapReduce;
+import co.cask.cdap.api.plugin.PluginConfigurer;
 import co.cask.cdap.api.schedule.SchedulableProgramType;
 import co.cask.cdap.api.schedule.Schedule;
 import co.cask.cdap.api.service.Service;
@@ -31,7 +31,7 @@ import java.util.Map;
 /**
  * Configures a CDAP Application.
  */
-public interface ApplicationConfigurer extends DatasetConfigurer {
+public interface ApplicationConfigurer extends PluginConfigurer {
 
   /**
    * Sets the name of the Application.

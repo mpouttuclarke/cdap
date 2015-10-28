@@ -19,10 +19,9 @@ package co.cask.cdap.internal.app.runtime.batch.dataset;
 import co.cask.cdap.api.data.batch.BatchReadable;
 import co.cask.cdap.api.data.batch.Split;
 import co.cask.cdap.api.data.batch.SplitReader;
-import co.cask.cdap.app.metrics.MapReduceMetrics;
-import co.cask.cdap.internal.app.runtime.batch.BasicMapReduceContext;
+import co.cask.cdap.internal.app.runtime.batch.BasicMapReduceTaskContext;
+import co.cask.cdap.internal.app.runtime.batch.MapReduceClassLoader;
 import co.cask.cdap.internal.app.runtime.batch.MapReduceContextConfig;
-import co.cask.cdap.internal.app.runtime.batch.MapReduceContextProvider;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.InputSplit;
@@ -60,26 +59,23 @@ public final class DataSetInputFormat<KEY, VALUE> extends InputFormat<KEY, VALUE
     return list;
   }
 
-  @SuppressWarnings("unchecked")
   @Override
-  public RecordReader<KEY, VALUE> createRecordReader(final InputSplit split,
-                                                     final TaskAttemptContext context)
+  public RecordReader<KEY, VALUE> createRecordReader(InputSplit split,
+                                                     TaskAttemptContext context)
     throws IOException, InterruptedException {
 
     DataSetInputSplit inputSplit = (DataSetInputSplit) split;
 
     Configuration conf = context.getConfiguration();
-    // we don't currently allow datasets as the format between map and reduce stages, otherwise we'll have to
-    // pass in the stage here instead of hardcoding mapper.
-    MapReduceContextProvider contextProvider = new MapReduceContextProvider(context, MapReduceMetrics.TaskType.Mapper);
-    BasicMapReduceContext mrContext = contextProvider.get();
-    mrContext.getMetricsCollectionService().startAndWait();
+    MapReduceClassLoader classLoader = MapReduceClassLoader.getFromConfiguration(conf);
+    BasicMapReduceTaskContext taskContext = classLoader.getTaskContextProvider().get(context);
+
     String dataSetName = getInputName(conf);
-    BatchReadable<KEY, VALUE> inputDataset = mrContext.getDataset(dataSetName);
+    BatchReadable<KEY, VALUE> inputDataset = taskContext.getDataset(dataSetName);
     SplitReader<KEY, VALUE> splitReader = inputDataset.createSplitReader(inputSplit.getSplit());
 
     // the record reader now owns the context and will close it
-    return new DataSetRecordReader<>(splitReader, contextProvider);
+    return new DataSetRecordReader<>(splitReader, taskContext);
   }
 
   private String getInputName(Configuration conf) {

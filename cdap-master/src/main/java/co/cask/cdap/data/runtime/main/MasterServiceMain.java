@@ -32,6 +32,7 @@ import co.cask.cdap.common.guice.TwillModule;
 import co.cask.cdap.common.guice.ZKClientModule;
 import co.cask.cdap.common.io.URLConnections;
 import co.cask.cdap.common.kerberos.SecurityUtil;
+import co.cask.cdap.common.namespace.guice.NamespaceClientRuntimeModule;
 import co.cask.cdap.common.runtime.DaemonMain;
 import co.cask.cdap.common.service.RetryOnStartFailureService;
 import co.cask.cdap.common.service.RetryStrategies;
@@ -41,6 +42,7 @@ import co.cask.cdap.data.runtime.DataFabricModules;
 import co.cask.cdap.data.runtime.DataSetServiceModules;
 import co.cask.cdap.data.runtime.DataSetsModules;
 import co.cask.cdap.data.stream.StreamAdminModules;
+import co.cask.cdap.data.view.ViewAdminModules;
 import co.cask.cdap.data2.datafabric.dataset.service.DatasetService;
 import co.cask.cdap.data2.util.hbase.ConfigurationTable;
 import co.cask.cdap.data2.util.hbase.HBaseTableUtil;
@@ -148,6 +150,10 @@ public class MasterServiceMain extends DaemonMain {
   public MasterServiceMain() {
     this.cConf = CConfiguration.create();
     this.cConf.set(Constants.Dataset.Manager.ADDRESS, getLocalHost().getCanonicalHostName());
+
+    // Note: login has to happen before any objects that need Kerberos credentials are instantiated.
+    login();
+
     this.hConf = HBaseConfiguration.create();
 
     Injector injector = createBaseInjector(cConf, hConf);
@@ -166,7 +172,6 @@ public class MasterServiceMain extends DaemonMain {
     cleanupTempDir();
 
     checkExploreRequirements();
-    login();
   }
 
   @Override
@@ -325,7 +330,9 @@ public class MasterServiceMain extends DaemonMain {
       new ExploreClientModule(),
       new NotificationFeedServiceRuntimeModule().getDistributedModules(),
       new NotificationServiceRuntimeModule().getDistributedModules(),
-      new StreamAdminModules().getDistributedModules()
+      new ViewAdminModules().getDistributedModules(),
+      new StreamAdminModules().getDistributedModules(),
+      new NamespaceClientRuntimeModule().getDistributedModules()
     );
   }
 
@@ -489,7 +496,12 @@ public class MasterServiceMain extends DaemonMain {
     if (controller != null) {
       startTime = 0L;
     } else {
-      controller = startTwillApplication();
+      try {
+        controller = startTwillApplication();
+      } catch (Exception e) {
+        LOG.error("Failed to start master twill application", e);
+        throw e;
+      }
       startTime = System.currentTimeMillis();
     }
 
@@ -656,13 +668,12 @@ public class MasterServiceMain extends DaemonMain {
    * runnable.
    */
   private TwillPreparer prepareExploreContainer(TwillPreparer preparer) {
-    File tempDir = DirUtils.createTempDir(new File(cConf.get(Constants.CFG_LOCAL_DATA_DIR),
-                                                   cConf.get(Constants.AppFabric.TEMP_DIR)).getAbsoluteFile());
-
     try {
       // Put jars needed by Hive in the containers classpath. Those jars are localized in the Explore
       // container by MasterTwillApplication, so they are available for ExploreServiceTwillRunnable
-      Set<File> jars = ExploreServiceUtils.traceExploreDependencies();
+      File tempDir = DirUtils.createTempDir(new File(cConf.get(Constants.CFG_LOCAL_DATA_DIR),
+                                                     cConf.get(Constants.AppFabric.TEMP_DIR)).getAbsoluteFile());
+      Set<File> jars = ExploreServiceUtils.traceExploreDependencies(tempDir);
       for (File jarFile : jars) {
         LOG.trace("Adding jar file to classpath: {}", jarFile.getName());
         preparer = preparer.withClassPaths(jarFile.getName());
@@ -679,6 +690,8 @@ public class MasterServiceMain extends DaemonMain {
     }
 
     // Add all the conf files needed by hive as resources available to containers
+    File tempDir = DirUtils.createTempDir(new File(cConf.get(Constants.CFG_LOCAL_DATA_DIR),
+                                                   cConf.get(Constants.AppFabric.TEMP_DIR)).getAbsoluteFile());
     Iterable<File> hiveConfFilesFiles = ExploreServiceUtils.getClassPathJarsFiles(hiveConfFiles);
     Set<String> addedFiles = Sets.newHashSet();
     for (File file : hiveConfFilesFiles) {

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2014 Cask Data, Inc.
+ * Copyright © 2014-2015 Cask Data, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -48,8 +48,8 @@ import org.apache.hadoop.hbase.regionserver.ScanType;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.wal.WAL;
 import org.apache.hadoop.hbase.wal.WALFactory;
-import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 
 import java.net.InetAddress;
@@ -64,22 +64,18 @@ import static org.junit.Assert.assertTrue;
  * Tests for {@link IncrementSummingScanner} implementation.
  */
 public class IncrementSummingScannerTest {
+
+  @ClassRule
+  public static final HBase10Test TEST_HBASE = new HBase10Test();
+
   private static final byte[] TRUE = Bytes.toBytes(true);
-  private static HBase10Test testUtil;
   private static Configuration conf;
   private static CConfiguration cConf;
 
   @BeforeClass
   public static void setupBeforeClass() throws Exception {
-    testUtil = new HBase10Test();
-    testUtil.startHBase();
-    conf = testUtil.getConfiguration();
+    conf = TEST_HBASE.getConfiguration();
     cConf = CConfiguration.create();
-  }
-
-  @AfterClass
-  public static void shutdownAfterClass() throws Exception {
-    testUtil.stopHBase();
   }
 
   @Test
@@ -316,6 +312,73 @@ public class IncrementSummingScannerTest {
   }
 
   @Test
+  public void testMultiColumnFlushAndCompact() throws Exception {
+    TableId tableId = TableId.from(Id.Namespace.DEFAULT, "testMultiColumnFlushAndCompact");
+    byte[] familyBytes = Bytes.toBytes("f");
+    byte[] columnBytes = Bytes.toBytes("c");
+    byte[] columnBytes2 = Bytes.toBytes("c2");
+    HRegion region = createRegion(tableId, familyBytes);
+    try {
+      region.initialize();
+
+      long now = 1;
+      byte[] row1 = Bytes.toBytes("row1");
+      byte[] row2 = Bytes.toBytes("row2");
+
+      // Initial put to row1,c2
+      Put row1P = new Put(row1);
+      row1P.add(familyBytes, columnBytes2, now - 1, Bytes.toBytes(5L));
+      region.put(row1P);
+
+      // Initial put to row2,c
+      Put row2P = new Put(row2);
+      row2P.add(familyBytes, columnBytes, now - 1, Bytes.toBytes(10L));
+      region.put(row2P);
+
+      // Generate some increments
+      long ts = now;
+      for (int i = 0; i < 50; i++) {
+        region.put(generateIncrementPut(familyBytes, columnBytes, row1, ts));
+        region.put(generateIncrementPut(familyBytes, columnBytes, row2, ts));
+        region.put(generateIncrementPut(familyBytes, columnBytes2, row1, ts));
+        ts++;
+      }
+
+      // First scanner represents flush scanner
+      RegionScanner scanner =
+        new IncrementSummingScanner(region, -1, region.getScanner(new Scan().setMaxVersions()),
+                                    ScanType.COMPACT_RETAIN_DELETES, now + 15, -1);
+      // Second scanner is a user scan, this is to help in easy asserts
+      scanner = new IncrementSummingScanner(region, -1, scanner, ScanType.USER_SCAN);
+
+      List<Cell> results = Lists.newArrayList();
+      assertTrue(scanner.next(results, 10));
+      assertEquals(2, results.size());
+      Cell cell = results.get(0);
+      assertNotNull(cell);
+      assertEquals("row1", Bytes.toString(cell.getRow()));
+      assertEquals("c", Bytes.toString(cell.getQualifier()));
+      assertEquals(50, Bytes.toLong(cell.getValue()));
+
+      cell = results.get(1);
+      assertNotNull(cell);
+      assertEquals("row1", Bytes.toString(cell.getRow()));
+      assertEquals("c2", Bytes.toString(cell.getQualifier()));
+      assertEquals(55, Bytes.toLong(cell.getValue()));
+
+      results.clear();
+      assertFalse(scanner.next(results, 10));
+      assertEquals(1, results.size());
+      cell = results.get(0);
+      assertNotNull(cell);
+      assertEquals("row2", Bytes.toString(cell.getRow()));
+      assertEquals(60, Bytes.toLong(cell.getValue()));
+    } finally {
+      region.close();
+    }
+  }
+
+  @Test
   public void testIncrementScanningWithBatchAndUVB() throws Exception {
     TableId tableId = TableId.from(Id.Namespace.DEFAULT, "TestIncrementSummingScannerWithUpperVisibilityBound");
     byte[] familyBytes = Bytes.toBytes("f");
@@ -383,6 +446,13 @@ public class IncrementSummingScannerTest {
     } finally {
       region.close();
     }
+  }
+
+  private Put generateIncrementPut(byte[] familyBytes, byte[] columnBytes, byte [] row, long ts) {
+    Put p = new Put(row);
+    p.add(familyBytes, columnBytes, ts, Bytes.toBytes(1L));
+    p.setAttribute(HBaseTable.DELTA_WRITE, TRUE);
+    return p;
   }
 
   private void verifyCounts(HRegion region, Scan scan, long[] counts) throws Exception {

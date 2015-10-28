@@ -18,7 +18,7 @@ package co.cask.cdap.api.mapreduce;
 
 import co.cask.cdap.api.Resources;
 import co.cask.cdap.api.data.stream.StreamBatchReadable;
-import co.cask.cdap.internal.api.AbstractProgramDatasetConfigurable;
+import co.cask.cdap.internal.api.AbstractPluginConfigurable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,7 +28,7 @@ import java.util.Map;
 /**
  * This abstract class provides a default implementation of {@link MapReduce} methods for easy extension.
  */
-public abstract class AbstractMapReduce extends AbstractProgramDatasetConfigurable<MapReduceConfigurer>
+public abstract class AbstractMapReduce extends AbstractPluginConfigurable<MapReduceConfigurer>
   implements MapReduce {
 
   private MapReduceConfigurer configurer;
@@ -150,7 +150,11 @@ public abstract class AbstractMapReduce extends AbstractProgramDatasetConfigurab
 
   /**
    * Sets the name of the Dataset used as output for the {@link MapReduce}.
+   *
+   * Deprecated as of 3.2.0. Use {@link MapReduceContext#setOutput(String datasetName)}
+   * in {@link #beforeSubmit}, instead.
    */
+  @Deprecated
   protected final void setOutputDataset(String dataset) {
     configurer.setOutputDataset(dataset);
   }

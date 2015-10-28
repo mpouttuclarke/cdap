@@ -86,8 +86,12 @@ public class DefaultWorkflowManager extends AbstractProgramManager<WorkflowManag
 
       @Override
       public String status(int expectedCode) {
-        return appFabricClient.scheduleStatus(programId.getNamespaceId(), programId.getApplicationId(),
-                                              schedName, expectedCode);
+        try {
+          return appFabricClient.scheduleStatus(programId.getNamespaceId(), programId.getApplicationId(),
+                                                schedName, expectedCode);
+        } catch (Exception e) {
+          throw Throwables.propagate(e);
+        }
       }
     };
   }

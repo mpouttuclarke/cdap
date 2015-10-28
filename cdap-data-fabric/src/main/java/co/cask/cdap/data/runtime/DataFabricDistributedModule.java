@@ -61,14 +61,14 @@ public class DataFabricDistributedModule extends AbstractModule {
     // bind transactions
     bind(TxMetricsCollector.class).to(TransactionManagerMetricsCollector.class).in(Scopes.SINGLETON);
     install(new TransactionModules().getDistributedModules());
-
+    install(new TransactionExecutorModule());
   }
 
   /**
    * Provides implementation of {@link ThriftClientProvider} based on configuration.
    */
   @Singleton
-  private static final class ThriftClientProviderSupplier implements Provider<ThriftClientProvider> {
+  public static final class ThriftClientProviderSupplier implements Provider<ThriftClientProvider> {
 
     private final CConfiguration cConf;
     private final Configuration hConf;

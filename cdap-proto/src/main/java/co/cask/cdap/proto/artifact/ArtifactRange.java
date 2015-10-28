@@ -37,13 +37,13 @@ public class ArtifactRange {
   }
 
   public ArtifactRange(Id.Namespace namespace, String name, ArtifactVersion lower, boolean isLowerInclusive,
-                       ArtifactVersion upper, boolean isUpperInclusives) {
+                       ArtifactVersion upper, boolean isUpperInclusive) {
     this.namespace = namespace;
     this.name = name;
     this.lower = lower;
     this.upper = upper;
     this.isLowerInclusive = isLowerInclusive;
-    this.isUpperInclusive = isUpperInclusives;
+    this.isUpperInclusive = isUpperInclusive;
   }
 
   public Id.Namespace getNamespace() {
@@ -155,7 +155,7 @@ public class ArtifactRange {
 
   /**
    * Parses an unnamespaced string representation of an artifact range. It is expected to be of the form:
-   * {name}[{lower-version},{upper-version}]. Square brackets are inclusive, and parantheses are exclusive.
+   * {name}[{lower-version},{upper-version}]. Square brackets are inclusive, and parentheses are exclusive.
    * For example, my-functions[1.0.0,2.0.0) will correspond to an artifact name of my-functions with a
    * lower version of 1.0.0 and an upper version of 2.0.0.
    *
@@ -186,7 +186,7 @@ public class ArtifactRange {
       throw new InvalidArtifactRangeException(String.format("Invalid artifact range %s. " +
         "Could not find ',' separating lower and upper verions.", artifactRangeStr));
     }
-    String lowerStr = artifactRangeStr.substring(versionStartIndex + 1, commaIndex);
+    String lowerStr = artifactRangeStr.substring(versionStartIndex + 1, commaIndex).trim();
     ArtifactVersion lower = new ArtifactVersion(lowerStr);
     if (lower.getVersion() == null) {
       throw new InvalidArtifactRangeException(String.format(
@@ -199,7 +199,7 @@ public class ArtifactRange {
       throw new InvalidArtifactRangeException(String.format(
         "Invalid artifact range %s. Could not find enclosing ']' or ')'.", artifactRangeStr));
     }
-    String upperStr = artifactRangeStr.substring(commaIndex + 1, versionEndIndex);
+    String upperStr = artifactRangeStr.substring(commaIndex + 1, versionEndIndex).trim();
     ArtifactVersion upper = new ArtifactVersion(upperStr);
     if (upper.getVersion() == null) {
       throw new InvalidArtifactRangeException(String.format(
@@ -213,7 +213,6 @@ public class ArtifactRange {
         artifactRangeStr, lowerStr, upperStr));
     }
 
-    // for example: 'Artifact-Extends: etl-batch-1.0.0:2.0.0,etl-realtime-1.0.0:3.0.0
     return new ArtifactRange(namespace, name, lower, isLowerInclusive, upper, isUpperInclusive);
   }
 

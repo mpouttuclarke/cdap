@@ -23,12 +23,10 @@ import co.cask.cdap.api.schedule.Schedule;
 import co.cask.cdap.api.schedule.Schedules;
 import co.cask.cdap.app.runtime.ProgramRuntimeService;
 import co.cask.cdap.app.store.Store;
-import co.cask.cdap.common.NamespaceCannotBeDeletedException;
-import co.cask.cdap.common.NotFoundException;
 import co.cask.cdap.common.conf.CConfiguration;
+import co.cask.cdap.common.namespace.NamespaceAdmin;
 import co.cask.cdap.common.utils.Tasks;
 import co.cask.cdap.internal.AppFabricTestHelper;
-import co.cask.cdap.internal.app.namespace.NamespaceAdmin;
 import co.cask.cdap.proto.Id;
 import co.cask.cdap.proto.NamespaceMeta;
 import co.cask.cdap.proto.ProgramRunStatus;
@@ -80,7 +78,7 @@ public abstract class SchedulerTestBase {
     store = injector.getInstance(Store.class);
     metricStore = injector.getInstance(MetricStore.class);
     namespaceAdmin = injector.getInstance(NamespaceAdmin.class);
-    namespaceAdmin.createNamespace(NamespaceMeta.DEFAULT);
+    namespaceAdmin.create(NamespaceMeta.DEFAULT);
     runtimeService = injector.getInstance(ProgramRuntimeService.class);
   }
 
@@ -105,12 +103,12 @@ public abstract class SchedulerTestBase {
 
     // Publish a notification on behalf of the stream with enough data to trigger the execution of the job
     metricsPublisher.increment(1024 * 1024);
-    waitForRuns(store, PROGRAM_ID, 1, 5);
-    waitUntilFinished(runtimeService, PROGRAM_ID, 5);
+    waitForRuns(store, PROGRAM_ID, 1, 15);
+    waitUntilFinished(runtimeService, PROGRAM_ID, 15);
 
     // Trigger both scheduled program
     metricsPublisher.increment(1024 * 1024);
-    waitForRuns(store, PROGRAM_ID, 3, 5);
+    waitForRuns(store, PROGRAM_ID, 3, 15);
 
     // Suspend a schedule multiple times, and make sur that it doesn't mess up anything
     streamSizeScheduler.suspendSchedule(PROGRAM_ID, PROGRAM_TYPE, SCHEDULE_NAME_2);
@@ -120,7 +118,7 @@ public abstract class SchedulerTestBase {
 
     // Since schedule 2 is suspended, only the first schedule should get triggered
     metricsPublisher.increment(1024 * 1024);
-    waitForRuns(store, PROGRAM_ID, 4, 5);
+    waitForRuns(store, PROGRAM_ID, 4, 15);
 
     // Resume schedule 2
     streamSizeScheduler.resumeSchedule(PROGRAM_ID, PROGRAM_TYPE, SCHEDULE_NAME_2);
@@ -131,13 +129,13 @@ public abstract class SchedulerTestBase {
     // Both schedules should be trigger. In particular, the schedule that has just been resumed twice should
     // only trigger once
     metricsPublisher.increment(1024 * 1024);
-    waitForRuns(store, PROGRAM_ID, 6, 5);
+    waitForRuns(store, PROGRAM_ID, 6, 15);
 
     // Update the schedule2's data trigger
     // Both schedules should now trigger execution after 1 MB of data received
     streamSizeScheduler.updateSchedule(PROGRAM_ID, PROGRAM_TYPE, UPDATE_SCHEDULE_2);
     metricsPublisher.increment(1024 * 1024);
-    waitForRuns(store, PROGRAM_ID, 8, 5);
+    waitForRuns(store, PROGRAM_ID, 8, 15);
 
     streamSizeScheduler.suspendSchedule(PROGRAM_ID, PROGRAM_TYPE, SCHEDULE_NAME_1);
     streamSizeScheduler.suspendSchedule(PROGRAM_ID, PROGRAM_TYPE, SCHEDULE_NAME_2);
@@ -146,8 +144,8 @@ public abstract class SchedulerTestBase {
   }
 
   @AfterClass
-  public static void tearDown() throws NotFoundException, NamespaceCannotBeDeletedException {
-    namespaceAdmin.deleteNamespace(Id.Namespace.DEFAULT);
+  public static void tearDown() throws Exception {
+    namespaceAdmin.delete(Id.Namespace.DEFAULT);
   }
 
   /**

@@ -67,6 +67,7 @@ import javax.annotation.Nullable;
 public class DatasetTypeManager extends AbstractIdleService {
   private static final Logger LOG = LoggerFactory.getLogger(DatasetTypeManager.class);
 
+  private final CConfiguration cConf;
   private final MDSDatasetsRegistry mdsDatasets;
   private final LocationFactory locationFactory;
 
@@ -74,13 +75,14 @@ public class DatasetTypeManager extends AbstractIdleService {
   private final boolean allowDatasetUncheckedUpgrade;
 
   @Inject
-  public DatasetTypeManager(CConfiguration configuration, MDSDatasetsRegistry mdsDatasets,
+  public DatasetTypeManager(CConfiguration cConf, MDSDatasetsRegistry mdsDatasets,
                             LocationFactory locationFactory,
                             @Named("defaultDatasetModules") Map<String, DatasetModule> defaultModules) {
+    this.cConf = cConf;
     this.mdsDatasets = mdsDatasets;
     this.locationFactory = locationFactory;
     this.defaultModules = Maps.newLinkedHashMap(defaultModules);
-    this.allowDatasetUncheckedUpgrade = configuration.getBoolean(Constants.Dataset.DATASET_UNCHECKED_UPGRADE);
+    this.allowDatasetUncheckedUpgrade = cConf.getBoolean(Constants.Dataset.DATASET_UNCHECKED_UPGRADE);
   }
 
   @Override
@@ -119,18 +121,17 @@ public class DatasetTypeManager extends AbstractIdleService {
             throw new DatasetModuleConflictException(msg);
           }
 
-          ClassLoader cl;
           DatasetModule module;
           File unpackedLocation = Files.createTempDir();
           DependencyTrackingRegistry reg;
           try {
             // NOTE: if jarLocation is null, we assume that this is a system module, ie. always present in classpath
+            ClassLoader cl = getClass().getClassLoader();
             if (jarLocation != null) {
               BundleJarUtil.unpackProgramJar(jarLocation, unpackedLocation);
+              cl = ProgramClassLoader.create(cConf, unpackedLocation, getClass().getClassLoader());
             }
-            cl = jarLocation == null ? this.getClass().getClassLoader() :
-              ProgramClassLoader.create(unpackedLocation, getClass().getClassLoader());
-            @SuppressWarnings("unchecked")
+
             Class clazz = ClassLoaders.loadClass(className, cl, this);
             module = DatasetModules.getDatasetModule(clazz);
             reg = new DependencyTrackingRegistry(datasetModuleId.getNamespace(), datasets);
@@ -347,9 +348,9 @@ public class DatasetTypeManager extends AbstractIdleService {
                                                                                                      typesToDelete);
           // cannot delete when there's instance that uses it
           if (dependentInstances.size() > 0) {
-            String msg =
-              String.format("Cannot delete all modules: existing dataset instances depend on it. Delete them first");
-            throw new DatasetModuleConflictException(msg);
+            throw new DatasetModuleConflictException(
+              "Cannot delete all modules: existing dataset instances depend on it. Delete them first"
+            );
           }
 
           datasets.getTypeMDS().deleteModules(namespaceId);
@@ -471,7 +472,7 @@ public class DatasetTypeManager extends AbstractIdleService {
         def = registry.get(datasetTypeName);
       } else {
         try {
-          def = new DatasetDefinitionLoader(locationFactory).load(typeMeta, registry);
+          def = new DatasetDefinitionLoader(cConf, locationFactory).load(typeMeta, registry);
         } catch (IOException e) {
           throw Throwables.propagate(e);
         }

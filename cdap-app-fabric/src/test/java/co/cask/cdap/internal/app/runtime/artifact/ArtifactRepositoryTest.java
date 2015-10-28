@@ -17,13 +17,16 @@
 package co.cask.cdap.internal.app.runtime.artifact;
 
 import co.cask.cdap.api.app.Application;
-import co.cask.cdap.api.artifact.ArtifactDescriptor;
+import co.cask.cdap.api.artifact.ArtifactId;
 import co.cask.cdap.api.artifact.ArtifactVersion;
-import co.cask.cdap.api.templates.plugins.PluginClass;
-import co.cask.cdap.api.templates.plugins.PluginProperties;
-import co.cask.cdap.api.templates.plugins.PluginPropertyField;
+import co.cask.cdap.api.plugin.Plugin;
+import co.cask.cdap.api.plugin.PluginClass;
+import co.cask.cdap.api.plugin.PluginProperties;
+import co.cask.cdap.api.plugin.PluginPropertyField;
+import co.cask.cdap.api.plugin.PluginSelector;
 import co.cask.cdap.app.program.ManifestFields;
 import co.cask.cdap.common.InvalidArtifactException;
+import co.cask.cdap.common.conf.ArtifactConfig;
 import co.cask.cdap.common.conf.CConfiguration;
 import co.cask.cdap.common.conf.Constants;
 import co.cask.cdap.common.io.Locations;
@@ -31,14 +34,15 @@ import co.cask.cdap.common.lang.ProgramClassLoader;
 import co.cask.cdap.common.lang.jar.BundleJarUtil;
 import co.cask.cdap.common.utils.DirUtils;
 import co.cask.cdap.internal.AppFabricTestHelper;
-import co.cask.cdap.internal.app.plugins.template.test.PluginTestAppTemplate;
-import co.cask.cdap.internal.app.plugins.template.test.api.PluginTestRunnable;
 import co.cask.cdap.internal.app.plugins.test.TestPlugin;
 import co.cask.cdap.internal.app.plugins.test.TestPlugin2;
-import co.cask.cdap.internal.app.runtime.adapter.EmptyClass;
-import co.cask.cdap.internal.app.runtime.adapter.PluginInstantiator;
+import co.cask.cdap.internal.app.runtime.artifact.app.plugin.PluginTestApp;
+import co.cask.cdap.internal.app.runtime.artifact.app.plugin.PluginTestRunnable;
+import co.cask.cdap.internal.app.runtime.artifact.plugin.EmptyClass;
 import co.cask.cdap.internal.app.runtime.artifact.plugin.Plugin1;
 import co.cask.cdap.internal.app.runtime.artifact.plugin.Plugin2;
+import co.cask.cdap.internal.app.runtime.plugin.PluginInstantiator;
+import co.cask.cdap.internal.app.runtime.plugin.PluginNotExistsException;
 import co.cask.cdap.internal.test.AppJarHelper;
 import co.cask.cdap.internal.test.PluginJarHelper;
 import co.cask.cdap.proto.Id;
@@ -102,7 +106,7 @@ public class ArtifactRepositoryTest {
   @Before
   public void setupData() throws Exception {
     artifactRepository.clear(Id.Namespace.DEFAULT);
-    File appArtifactFile = createAppJar(PluginTestAppTemplate.class, new File(tmpDir, "PluginTest-1.0.0.jar"),
+    File appArtifactFile = createAppJar(PluginTestApp.class, new File(tmpDir, "PluginTest-1.0.0.jar"),
       createManifest(ManifestFields.EXPORT_PACKAGE, PluginTestRunnable.class.getPackage().getName()));
     artifactRepository.addArtifact(APP_ARTIFACT_ID, appArtifactFile, null);
     appClassLoader = createAppClassLoader(appArtifactFile);
@@ -110,9 +114,17 @@ public class ArtifactRepositoryTest {
 
   @Test(expected = InvalidArtifactException.class)
   public void testMultipleParentVersions() throws InvalidArtifactException {
-    ArtifactRepository.validateParentSet(ImmutableSet.of(
+    Id.Artifact child = Id.Artifact.from(Id.Namespace.SYSTEM, "abc", "1.0.0");
+    ArtifactRepository.validateParentSet(child, ImmutableSet.of(
       new ArtifactRange(Id.Namespace.SYSTEM, "r1", new ArtifactVersion("1.0.0"), new ArtifactVersion("2.0.0")),
       new ArtifactRange(Id.Namespace.SYSTEM, "r1", new ArtifactVersion("3.0.0"), new ArtifactVersion("4.0.0"))));
+  }
+
+  @Test(expected = InvalidArtifactException.class)
+  public void testSelfExtendingArtifact() throws InvalidArtifactException {
+    Id.Artifact child = Id.Artifact.from(Id.Namespace.SYSTEM, "abc", "1.0.0");
+    ArtifactRepository.validateParentSet(child, ImmutableSet.of(
+      new ArtifactRange(Id.Namespace.SYSTEM, "abc", new ArtifactVersion("1.0.0"), new ArtifactVersion("2.0.0"))));
   }
 
   @Test(expected = InvalidArtifactException.class)
@@ -125,30 +137,51 @@ public class ArtifactRepositoryTest {
   @Test
   public void testAddSystemArtifacts() throws Exception {
     Id.Artifact systemAppArtifactId = Id.Artifact.from(Id.Namespace.SYSTEM, "PluginTest", "1.0.0");
-    createAppJar(PluginTestAppTemplate.class, new File(systemArtifactsDir, "PluginTest-1.0.0.jar"),
+    createAppJar(PluginTestApp.class, new File(systemArtifactsDir, "PluginTest-1.0.0.jar"),
       createManifest(ManifestFields.EXPORT_PACKAGE, PluginTestRunnable.class.getPackage().getName()));
 
     // write plugins jar
-    Id.Artifact pluginArtifactId = Id.Artifact.from(Id.Namespace.SYSTEM, "myPlugin", "1.0.0");
+    Id.Artifact pluginArtifactId1 = Id.Artifact.from(Id.Namespace.SYSTEM, "APlugin", "1.0.0");
 
     Manifest manifest = createManifest(ManifestFields.EXPORT_PACKAGE, TestPlugin.class.getPackage().getName());
-    createPluginJar(TestPlugin.class, new File(systemArtifactsDir, "myPlugin-1.0.0.jar"), manifest);
+    createPluginJar(TestPlugin.class, new File(systemArtifactsDir, "APlugin-1.0.0.jar"), manifest);
 
     // write plugins config file
     Map<String, PluginPropertyField> emptyMap = Collections.emptyMap();
-    Set<PluginClass> manuallyAddedPlugins = ImmutableSet.of(
+    Set<PluginClass> manuallyAddedPlugins1 = ImmutableSet.of(
       new PluginClass("typeA", "manual1", "desc", "co.cask.classname", null, emptyMap),
       new PluginClass("typeB", "manual2", "desc", "co.cask.otherclassname", null, emptyMap)
     );
-    File pluginConfigFile = new File(systemArtifactsDir, "myPlugin-1.0.0.json");
-    SystemArtifactConfig pluginConfig = SystemArtifactConfig.builder(pluginArtifactId, pluginConfigFile)
-      .addParents(new ArtifactRange(
-        Id.Namespace.SYSTEM, "PluginTest", new ArtifactVersion("0.9.0"), new ArtifactVersion("2.0.0")))
+    File pluginConfigFile = new File(systemArtifactsDir, "APlugin-1.0.0.json");
+    ArtifactConfig pluginConfig1 = new ArtifactConfig(
+      ImmutableSet.of(new ArtifactRange(
+        Id.Namespace.SYSTEM, "PluginTest", new ArtifactVersion("0.9.0"), new ArtifactVersion("2.0.0"))),
       // add a dummy plugin to test explicit addition of plugins through the config file
-      .addPlugins(manuallyAddedPlugins)
-      .build();
+      manuallyAddedPlugins1
+    );
     try (BufferedWriter writer = Files.newWriter(pluginConfigFile, Charsets.UTF_8)) {
-      writer.write(pluginConfig.toString());
+      writer.write(pluginConfig1.toString());
+    }
+
+    // write another plugins jar
+    Id.Artifact pluginArtifactId2 = Id.Artifact.from(Id.Namespace.SYSTEM, "BPlugin", "1.0.0");
+
+    manifest = createManifest(ManifestFields.EXPORT_PACKAGE, TestPlugin.class.getPackage().getName());
+    createPluginJar(TestPlugin.class, new File(systemArtifactsDir, "BPlugin-1.0.0.jar"), manifest);
+
+    // write plugins config file
+    Set<PluginClass> manuallyAddedPlugins2 = ImmutableSet.of(
+      new PluginClass("typeA", "manual1", "desc", "co.notcask.classname", null, emptyMap),
+      new PluginClass("typeB", "manual2", "desc", "co.notcask.otherclassname", null, emptyMap)
+    );
+    pluginConfigFile = new File(systemArtifactsDir, "BPlugin-1.0.0.json");
+    ArtifactConfig pluginConfig2 = new ArtifactConfig(
+      ImmutableSet.of(new ArtifactRange(
+        Id.Namespace.SYSTEM, "PluginTest", new ArtifactVersion("0.9.0"), new ArtifactVersion("2.0.0"))),
+      manuallyAddedPlugins2
+    );
+    try (BufferedWriter writer = Files.newWriter(pluginConfigFile, Charsets.UTF_8)) {
+      writer.write(pluginConfig2.toString());
     }
 
     artifactRepository.addSystemArtifacts();
@@ -156,7 +189,7 @@ public class ArtifactRepositoryTest {
     // check app artifact added correctly
     ArtifactDetail appArtifactDetail = artifactRepository.getArtifact(systemAppArtifactId);
     Map<ArtifactDescriptor, List<PluginClass>> plugins = artifactRepository.getPlugins(systemAppArtifactId);
-    Assert.assertEquals(1, plugins.size());
+    Assert.assertEquals(2, plugins.size());
     List<PluginClass> pluginClasses = plugins.values().iterator().next();
 
     Set<String> pluginNames = Sets.newHashSet();
@@ -164,15 +197,25 @@ public class ArtifactRepositoryTest {
       pluginNames.add(pluginClass.getName());
     }
     Assert.assertEquals(Sets.newHashSet("manual1", "manual2", "TestPlugin", "TestPlugin2"), pluginNames);
-    Assert.assertEquals(systemAppArtifactId.getName(), appArtifactDetail.getDescriptor().getName());
-    Assert.assertEquals(systemAppArtifactId.getVersion(), appArtifactDetail.getDescriptor().getVersion());
+    Assert.assertEquals(systemAppArtifactId.getName(), appArtifactDetail.getDescriptor().getArtifactId().getName());
+    Assert.assertEquals(systemAppArtifactId.getVersion(),
+                        appArtifactDetail.getDescriptor().getArtifactId().getVersion());
 
     // check plugin artifact added correctly
-    ArtifactDetail pluginArtifactDetail = artifactRepository.getArtifact(pluginArtifactId);
-    Assert.assertEquals(pluginArtifactId.getName(), pluginArtifactDetail.getDescriptor().getName());
-    Assert.assertEquals(pluginArtifactId.getVersion(), pluginArtifactDetail.getDescriptor().getVersion());
+    ArtifactDetail pluginArtifactDetail = artifactRepository.getArtifact(pluginArtifactId1);
+    Assert.assertEquals(pluginArtifactId1.getName(), pluginArtifactDetail.getDescriptor().getArtifactId().getName());
+    Assert.assertEquals(pluginArtifactId1.getVersion(),
+                        pluginArtifactDetail.getDescriptor().getArtifactId().getVersion());
     // check manually added plugins are there
-    Assert.assertTrue(pluginArtifactDetail.getMeta().getClasses().getPlugins().containsAll(manuallyAddedPlugins));
+    Assert.assertTrue(pluginArtifactDetail.getMeta().getClasses().getPlugins().containsAll(manuallyAddedPlugins1));
+
+    // check other plugin artifact added correctly
+    pluginArtifactDetail = artifactRepository.getArtifact(pluginArtifactId2);
+    Assert.assertEquals(pluginArtifactId2.getName(), pluginArtifactDetail.getDescriptor().getArtifactId().getName());
+    Assert.assertEquals(pluginArtifactId2.getVersion(),
+      pluginArtifactDetail.getDescriptor().getArtifactId().getVersion());
+    // check manually added plugins are there
+    Assert.assertTrue(pluginArtifactDetail.getMeta().getClasses().getPlugins().containsAll(manuallyAddedPlugins2));
   }
 
   @Test
@@ -187,6 +230,7 @@ public class ArtifactRepositoryTest {
 
   @Test
   public void testPlugin() throws Exception {
+    File pluginDir = DirUtils.createTempDir(tmpDir);
     // Create the plugin jar. There should be two plugins there (TestPlugin and TestPlugin2).
     Manifest manifest = createManifest(ManifestFields.EXPORT_PACKAGE, TestPlugin.class.getPackage().getName());
     File jarFile = createPluginJar(TestPlugin.class, new File(tmpDir, "myPlugin-1.0.jar"), manifest);
@@ -203,16 +247,17 @@ public class ArtifactRepositoryTest {
     Assert.assertEquals(1, plugins.size());
     Assert.assertEquals(2, plugins.get(plugins.firstKey()).size());
 
+    ArtifactDescriptor descriptor = plugins.firstKey();
+    Files.copy(Locations.newInputSupplier(descriptor.getLocation()),
+      new File(pluginDir, Artifacts.getFileName(descriptor.getArtifactId())));
     // Instantiate the plugins and execute them
-    try (PluginInstantiator instantiator = new PluginInstantiator(cConf, appClassLoader)) {
+    try (PluginInstantiator instantiator = new PluginInstantiator(cConf, appClassLoader, pluginDir)) {
       for (Map.Entry<ArtifactDescriptor, List<PluginClass>> entry : plugins.entrySet()) {
         for (PluginClass pluginClass : entry.getValue()) {
-          Callable<String> plugin = instantiator.newInstance(entry.getKey(), pluginClass,
-                                                             PluginProperties.builder()
-                                                              .add("class.name", TEST_EMPTY_CLASS)
-                                                              .add("timeout", "10")
-                                                              .build()
-          );
+          Plugin pluginInfo = new Plugin(entry.getKey().getArtifactId(), pluginClass,
+                                         PluginProperties.builder().add("class.name", TEST_EMPTY_CLASS)
+                                           .add("timeout", "10").build());
+          Callable<String> plugin = instantiator.newInstance(pluginInfo);
           Assert.assertEquals(TEST_EMPTY_CLASS, plugin.call());
         }
       }
@@ -229,6 +274,8 @@ public class ArtifactRepositoryTest {
       // expected
     }
 
+    File pluginDir = DirUtils.createTempDir(tmpDir);
+
     // Create a plugin jar. It contains two plugins, TestPlugin and TestPlugin2 inside.
     Id.Artifact artifact1Id = Id.Artifact.from(Id.Namespace.DEFAULT, "myPlugin", "1.0");
     Manifest manifest = createManifest(ManifestFields.EXPORT_PACKAGE, TestPlugin.class.getPackage().getName());
@@ -244,8 +291,10 @@ public class ArtifactRepositoryTest {
     Map.Entry<ArtifactDescriptor, PluginClass> plugin =
       artifactRepository.findPlugin(APP_ARTIFACT_ID, "plugin", "TestPlugin2", new PluginSelector());
     Assert.assertNotNull(plugin);
-    Assert.assertEquals(new ArtifactVersion("1.0"), plugin.getKey().getVersion());
+    Assert.assertEquals(new ArtifactVersion("1.0"), plugin.getKey().getArtifactId().getVersion());
     Assert.assertEquals("TestPlugin2", plugin.getValue().getName());
+    Files.copy(Locations.newInputSupplier(plugin.getKey().getLocation()),
+               new File(pluginDir, Artifacts.getFileName(plugin.getKey().getArtifactId())));
 
     // Create another plugin jar with later version and update the repository
     Id.Artifact artifact2Id = Id.Artifact.from(Id.Namespace.DEFAULT, "myPlugin", "2.0");
@@ -255,40 +304,43 @@ public class ArtifactRepositoryTest {
     // Should select the latest version
     plugin = artifactRepository.findPlugin(APP_ARTIFACT_ID, "plugin", "TestPlugin2", new PluginSelector());
     Assert.assertNotNull(plugin);
-    Assert.assertEquals(new ArtifactVersion("2.0"), plugin.getKey().getVersion());
+    Assert.assertEquals(new ArtifactVersion("2.0"), plugin.getKey().getArtifactId().getVersion());
     Assert.assertEquals("TestPlugin2", plugin.getValue().getName());
+    Files.copy(Locations.newInputSupplier(plugin.getKey().getLocation()),
+               new File(pluginDir, Artifacts.getFileName(plugin.getKey().getArtifactId())));
 
     // Load the Plugin class from the classLoader.
-    PluginInstantiator instantiator = new PluginInstantiator(cConf, appClassLoader);
-    ClassLoader pluginClassLoader = instantiator.getArtifactClassLoader(plugin.getKey());
-    Class<?> pluginClass = pluginClassLoader.loadClass(TestPlugin2.class.getName());
+    try (PluginInstantiator instantiator = new PluginInstantiator(cConf, appClassLoader, pluginDir)) {
+      ClassLoader pluginClassLoader = instantiator.getArtifactClassLoader(plugin.getKey().getArtifactId());
+      Class<?> pluginClass = pluginClassLoader.loadClass(TestPlugin2.class.getName());
 
-    // Use a custom plugin selector to select with smallest version
-    plugin = artifactRepository.findPlugin(APP_ARTIFACT_ID, "plugin", "TestPlugin2", new PluginSelector() {
-      @Override
-      public Map.Entry<ArtifactDescriptor, PluginClass> select(SortedMap<ArtifactDescriptor, PluginClass> plugins) {
-        return plugins.entrySet().iterator().next();
-      }
-    });
-    Assert.assertNotNull(plugin);
-    Assert.assertEquals(new ArtifactVersion("1.0"), plugin.getKey().getVersion());
-    Assert.assertEquals("TestPlugin2", plugin.getValue().getName());
+      // Use a custom plugin selector to select with smallest version
+      plugin = artifactRepository.findPlugin(APP_ARTIFACT_ID, "plugin", "TestPlugin2", new PluginSelector() {
+        @Override
+        public Map.Entry<ArtifactId, PluginClass> select(SortedMap<ArtifactId, PluginClass> plugins) {
+          return plugins.entrySet().iterator().next();
+        }
+      });
+      Assert.assertNotNull(plugin);
+      Assert.assertEquals(new ArtifactVersion("1.0"), plugin.getKey().getArtifactId().getVersion());
+      Assert.assertEquals("TestPlugin2", plugin.getValue().getName());
 
-    // Load the Plugin class again from the current plugin selected
-    // The plugin class should be different (from different ClassLoader)
-    // The empty class should be the same (from the plugin lib ClassLoader)
-    pluginClassLoader = instantiator.getArtifactClassLoader(plugin.getKey());
-    Assert.assertNotSame(pluginClass, pluginClassLoader.loadClass(TestPlugin2.class.getName()));
+      // Load the Plugin class again from the current plugin selected
+      // The plugin class should be different (from different ClassLoader)
+      // The empty class should be the same (from the plugin lib ClassLoader)
+      pluginClassLoader = instantiator.getArtifactClassLoader(plugin.getKey().getArtifactId());
+      Assert.assertNotSame(pluginClass, pluginClassLoader.loadClass(TestPlugin2.class.getName()));
 
-    // From the pluginClassLoader, loading export classes from the template jar should be allowed
-    Class<?> cls = pluginClassLoader.loadClass(PluginTestRunnable.class.getName());
-    // The class should be loaded from the parent artifact's classloader
-    Assert.assertSame(appClassLoader.loadClass(PluginTestRunnable.class.getName()), cls);
+      // From the pluginClassLoader, loading export classes from the template jar should be allowed
+      Class<?> cls = pluginClassLoader.loadClass(PluginTestRunnable.class.getName());
+      // The class should be loaded from the parent artifact's classloader
+      Assert.assertSame(appClassLoader.loadClass(PluginTestRunnable.class.getName()), cls);
 
-    // From the plugin classloader, all cdap api classes is loadable as well.
-    cls = pluginClassLoader.loadClass(Application.class.getName());
-    // The Application class should be the same as the one in the system classloader
-    Assert.assertSame(Application.class, cls);
+      // From the plugin classloader, all cdap api classes is loadable as well.
+      cls = pluginClassLoader.loadClass(Application.class.getName());
+      // The Application class should be the same as the one in the system classloader
+      Assert.assertSame(Application.class, cls);
+    }
   }
 
   @Test(expected = InvalidArtifactException.class)
@@ -317,7 +369,7 @@ public class ArtifactRepositoryTest {
   private static ClassLoader createAppClassLoader(File jarFile) throws IOException {
     final File unpackDir = DirUtils.createTempDir(TMP_FOLDER.newFolder());
     BundleJarUtil.unpackProgramJar(Files.newInputStreamSupplier(jarFile), unpackDir);
-    return ProgramClassLoader.create(unpackDir, ArtifactRepositoryTest.class.getClassLoader());
+    return ProgramClassLoader.create(cConf, unpackDir, ArtifactRepositoryTest.class.getClassLoader());
   }
 
   private static File createAppJar(Class<?> cls, File destFile, Manifest manifest) throws IOException {

@@ -30,7 +30,6 @@ import co.cask.cdap.client.config.ClientConfig;
 import co.cask.cdap.client.config.ConnectionConfig;
 import co.cask.cdap.client.exception.DisconnectedException;
 import co.cask.cdap.common.conf.CConfiguration;
-import co.cask.cdap.proto.Id;
 import co.cask.common.cli.CLI;
 import co.cask.common.cli.Command;
 import co.cask.common.cli.CommandSet;
@@ -111,11 +110,11 @@ public class CLIMain {
   private final LaunchOptions options;
   private final FilePathResolver filePathResolver;
 
-  public CLIMain(final LaunchOptions options, final CLIConfig cliConfig) throws URISyntaxException, IOException {
+  public CLIMain(final LaunchOptions options,
+                 final CLIConfig cliConfig) throws URISyntaxException, IOException {
     this.options = options;
     this.cliConfig = cliConfig;
 
-    cliConfig.getClientConfig().setVerifySSLCert(options.isVerifySSL());
     injector = Guice.createInjector(
       new AbstractModule() {
         @Override
@@ -174,19 +173,26 @@ public class CLIMain {
   /**
    * Tries to autoconnect to the provided URI in options.
    */
-  public void tryAutoconnect() {
+  public boolean tryAutoconnect(CommandLine command) {
+    if (!options.isAutoconnect()) {
+      return true;
+    }
+
     InstanceURIParser instanceURIParser = injector.getInstance(InstanceURIParser.class);
-    if (options.isAutoconnect()) {
-      try {
-        CLIConnectionConfig connection = instanceURIParser.parse(options.getUri());
-        cliConfig.tryConnect(connection, cliConfig.getOutput(), options.isDebug());
-      } catch (Exception e) {
-        if (options.isDebug()) {
-          e.printStackTrace(cliConfig.getOutput());
-        } else {
-          cliConfig.getOutput().println(e.getMessage());
-        }
+    try {
+      CLIConnectionConfig connection = instanceURIParser.parse(options.getUri());
+      cliConfig.tryConnect(connection, options.isVerifySSL(), cliConfig.getOutput(), options.isDebug());
+      return true;
+    } catch (Exception e) {
+      if (options.isDebug()) {
+        e.printStackTrace(cliConfig.getOutput());
+      } else {
+        cliConfig.getOutput().println(e.getMessage());
       }
+      if (!command.hasOption(URI_OPTION.getOpt())) {
+        cliConfig.getOutput().printf("Specify the CDAP instance URI with the -u command line argument.\n");
+      }
+      return false;
     }
   }
 
@@ -196,18 +202,6 @@ public class CLIMain {
 
   public FilePathResolver getFilePathResolver() {
     return filePathResolver;
-  }
-
-  private String limit(String string, int maxLength) {
-    if (string.length() <= maxLength) {
-      return string;
-    }
-
-    if (string.length() >= 4) {
-      return string.substring(0, string.length() - 3) + "...";
-    } else {
-      return string;
-    }
   }
 
   private void updateCLIPrompt(CLIConnectionConfig config) {
@@ -275,10 +269,13 @@ public class CLIMain {
         CLIMain cliMain = new CLIMain(launchOptions, cliConfig);
         CLI cli = cliMain.getCLI();
 
-        cliMain.tryAutoconnect();
+        if (!cliMain.tryAutoconnect(command)) {
+          System.exit(0);
+        }
 
         CLIConnectionConfig connectionConfig = new CLIConnectionConfig(
-          cliConfig.getClientConfig().getConnectionConfig(), Id.Namespace.DEFAULT, null);
+          cliConfig.getClientConfig().getConnectionConfig(),
+          cliConfig.getCurrentNamespace(), null);
         cliMain.updateCLIPrompt(connectionConfig);
 
         if (hasScriptFile) {
@@ -299,6 +296,8 @@ public class CLIMain {
         } else {
           cli.execute(Joiner.on(" ").join(commandArgs), output);
         }
+      } catch (DisconnectedException e) {
+        output.printf("Couldn't reach the CDAP instance at '%s'.", e.getConnectionConfig().getURI().toString());
       } catch (Exception e) {
         e.printStackTrace(output);
       }

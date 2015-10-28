@@ -1,12 +1,31 @@
+/*
+ * Copyright © 2015 Cask Data, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
 var params = {};
 class WorkflowsRunsController {
-  constructor($scope, $state, $filter, rRuns, myWorkFlowApi) {
+  constructor($scope, $state, $filter, rRuns, myWorkFlowApi, $bootstrapModal, rWorkflowDetail) {
     let fFilter = $filter('filter');
     this.runs = rRuns;
     this.$scope = $scope;
     this.$state = $state;
     this.myWorkFlowApi = myWorkFlowApi;
     this.runStatus = null;
+    this.$bootstrapModal = $bootstrapModal;
+    this.description = rWorkflowDetail.description;
+
 
     if ($state.params.runid) {
       var match = fFilter(rRuns, {runid: $state.params.runid});
@@ -28,7 +47,7 @@ class WorkflowsRunsController {
     $scope.$watch(
       angular.bind(this, () => this.runs.selected.runid ),
       () => {
-        if ($state.params.runid) {
+        if (this.$state.params.runid) {
           params['runId'] = this.runs.selected.runid;
           this.myWorkFlowApi
               .stopPollRunDetail(params)
@@ -59,6 +78,15 @@ class WorkflowsRunsController {
       this.myWorkFlowApi.stopPollRunDetail(params);
     });
     this.activeTab = this.tabs[0];
+
+    this.metadataParams = {
+      namespace: $state.params.namespace,
+      appId: $state.params.appId,
+      programType: 'workflows',
+      programId: $state.params.programId,
+      scope: $scope
+    };
+
   }
 
   startPollingCurrentRun() {
@@ -99,9 +127,31 @@ class WorkflowsRunsController {
      .resumeRun(params, {});
   }
 
+  openHistory() {
+    this.$bootstrapModal.open({
+      size: 'lg',
+      templateUrl: '/assets/features/workflows/templates/tabs/history.html',
+      controller: ['runs', '$scope', function(runs, $scope) {
+        $scope.runs = runs;
+      }],
+      resolve: {
+        runs:() => this.runs
+      }
+    });
+  }
+
+  openSchedules() {
+    this.$bootstrapModal.open({
+      size: 'lg',
+      templateUrl: '/assets/features/workflows/templates/tabs/schedules.html',
+      controller: 'WorkflowsSchedulesController',
+      controllerAs: 'SchedulesController'
+    });
+  }
+
 }
 
-WorkflowsRunsController.$inject = ['$scope', '$state', '$filter', 'rRuns', 'myWorkFlowApi'];
+WorkflowsRunsController.$inject = ['$scope', '$state', '$filter', 'rRuns', 'myWorkFlowApi', '$bootstrapModal', 'rWorkflowDetail'];
 
 angular.module(`${PKG.name}.feature.workflows`)
   .controller('WorkflowsRunsController', WorkflowsRunsController);

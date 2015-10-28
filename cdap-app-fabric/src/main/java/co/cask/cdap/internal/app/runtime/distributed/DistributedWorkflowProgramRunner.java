@@ -16,6 +16,7 @@
 package co.cask.cdap.internal.app.runtime.distributed;
 
 import co.cask.cdap.api.Resources;
+import co.cask.cdap.api.app.ApplicationSpecification;
 import co.cask.cdap.api.schedule.SchedulableProgramType;
 import co.cask.cdap.api.spark.SparkSpecification;
 import co.cask.cdap.api.workflow.ScheduleProgramInfo;
@@ -25,7 +26,6 @@ import co.cask.cdap.api.workflow.WorkflowConditionNode;
 import co.cask.cdap.api.workflow.WorkflowForkNode;
 import co.cask.cdap.api.workflow.WorkflowNode;
 import co.cask.cdap.api.workflow.WorkflowSpecification;
-import co.cask.cdap.app.ApplicationSpecification;
 import co.cask.cdap.app.program.Program;
 import co.cask.cdap.app.runtime.ProgramController;
 import co.cask.cdap.app.runtime.ProgramOptions;
@@ -46,6 +46,7 @@ import org.apache.twill.api.RunId;
 import org.apache.twill.api.TwillController;
 import org.apache.twill.api.TwillRunner;
 import org.apache.twill.common.Threads;
+import org.apache.twill.filesystem.LocationFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,8 +66,9 @@ public final class DistributedWorkflowProgramRunner extends AbstractDistributedP
   private static final Logger LOG = LoggerFactory.getLogger(DistributedWorkflowProgramRunner.class);
 
   @Inject
-  public DistributedWorkflowProgramRunner(TwillRunner twillRunner, Configuration hConf, CConfiguration cConf) {
-    super(twillRunner, createConfiguration(hConf), cConf);
+  public DistributedWorkflowProgramRunner(TwillRunner twillRunner, LocationFactory locationFactory,
+                                          Configuration hConf, CConfiguration cConf) {
+    super(twillRunner, locationFactory, createConfiguration(hConf), cConf);
   }
 
   @Override
@@ -142,7 +144,7 @@ public final class DistributedWorkflowProgramRunner extends AbstractDistributedP
     // End Hack for TWILL-144
 
     RunId runId = RunIds.fromString(options.getArguments().getOption(ProgramOptionConstants.RUN_ID));
-    return new WorkflowTwillProgramController(program.getName(), controller, runId).startListen();
+    return new WorkflowTwillProgramController(program.getId(), controller, runId).startListen();
   }
 
   private static Configuration createConfiguration(Configuration hConf) {

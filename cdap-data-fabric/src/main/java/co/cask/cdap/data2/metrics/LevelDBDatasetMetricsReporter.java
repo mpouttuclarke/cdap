@@ -92,8 +92,7 @@ public class LevelDBDatasetMetricsReporter extends AbstractScheduledService impl
     }
   }
 
-  private void report(Map<TableId, LevelDBTableService.TableStats> datasetStat)
-    throws DatasetManagementException {
+  private void report(Map<TableId, LevelDBTableService.TableStats> datasetStat) throws DatasetManagementException {
     for (Map.Entry<TableId, LevelDBTableService.TableStats> statEntry : datasetStat.entrySet()) {
       String namespace = statEntry.getKey().getNamespace().getId();
       // emit metrics for only user datasets, tables in system namespace are ignored

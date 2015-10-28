@@ -23,6 +23,7 @@ import co.cask.cdap.app.program.Program;
 import co.cask.cdap.app.program.Programs;
 import co.cask.cdap.common.conf.CConfiguration;
 import co.cask.cdap.common.conf.Constants;
+import co.cask.cdap.common.namespace.NamespaceAdmin;
 import co.cask.cdap.common.utils.DirUtils;
 import co.cask.cdap.common.utils.Networks;
 import co.cask.cdap.data.stream.StreamCoordinatorClient;
@@ -32,7 +33,6 @@ import co.cask.cdap.internal.app.deploy.LocalApplicationManager;
 import co.cask.cdap.internal.app.deploy.ProgramTerminator;
 import co.cask.cdap.internal.app.deploy.pipeline.AppDeploymentInfo;
 import co.cask.cdap.internal.app.deploy.pipeline.ApplicationWithPrograms;
-import co.cask.cdap.internal.app.namespace.NamespaceAdmin;
 import co.cask.cdap.internal.app.runtime.schedule.SchedulerService;
 import co.cask.cdap.internal.guice.AppFabricTestModule;
 import co.cask.cdap.internal.test.AppJarHelper;
@@ -79,7 +79,6 @@ public class AppFabricTestHelper {
       configuration = conf;
       configuration.set(Constants.CFG_LOCAL_DATA_DIR, TEMP_FOLDER.newFolder("data").getAbsolutePath());
       configuration.set(Constants.AppFabric.REST_PORT, Integer.toString(Networks.getRandomPort()));
-      configuration.setBoolean(Constants.Scheduler.SCHEDULERS_LAZY_START, true);
       configuration.setBoolean(Constants.Dangerous.UNRECOVERABLE_RESET, true);
       injector = Guice.createInjector(new AppFabricTestModule(configuration));
       injector.getInstance(TransactionManager.class).startAndWait();
@@ -126,10 +125,10 @@ public class AppFabricTestHelper {
     deployedJar.delete(true);
   }
 
-  private static void ensureNamespaceExists(Id.Namespace namespace) throws Exception {
+  public static void ensureNamespaceExists(Id.Namespace namespace) throws Exception {
     NamespaceAdmin namespaceAdmin = getInjector().getInstance(NamespaceAdmin.class);
-    if (!namespaceAdmin.hasNamespace(namespace)) {
-      namespaceAdmin.createNamespace(new NamespaceMeta.Builder().setName(namespace).build());
+    if (!namespaceAdmin.exists(namespace)) {
+      namespaceAdmin.create(new NamespaceMeta.Builder().setName(namespace).build());
     }
   }
 
@@ -162,7 +161,7 @@ public class AppFabricTestHelper {
         @Override
         public Program apply(Program program) {
           try {
-            return Programs.createWithUnpack(program.getJarLocation(), folderSupplier.get());
+            return Programs.createWithUnpack(configuration, program.getJarLocation(), folderSupplier.get());
           } catch (IOException e) {
             throw Throwables.propagate(e);
           }

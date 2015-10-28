@@ -17,7 +17,6 @@
 package co.cask.cdap.internal.app.runtime.artifact;
 
 import co.cask.cdap.api.artifact.ArtifactVersion;
-import co.cask.cdap.common.conf.Constants;
 import co.cask.cdap.proto.Id;
 import co.cask.cdap.proto.artifact.ArtifactRange;
 import co.cask.cdap.proto.artifact.InvalidArtifactRangeException;
@@ -30,6 +29,15 @@ import java.util.List;
 /**
  */
 public class ArtifactRangeTest {
+
+  @Test
+  public void testWhitespace() throws InvalidArtifactRangeException {
+    ArtifactRange range = ArtifactRange.parse(Id.Namespace.DEFAULT, "name[ 1.0.0 , 2.0.0 )");
+    Assert.assertEquals(new ArtifactRange(Id.Namespace.DEFAULT, "name",
+                                          new ArtifactVersion("1.0.0"), true,
+                                          new ArtifactVersion("2.0.0"), false),
+                        range);
+  }
 
   @Test
   public void testIsInRange() {

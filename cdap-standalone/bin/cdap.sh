@@ -22,7 +22,7 @@ if [ -d /opt/cdap ]; then
  CDAP_HOME=/opt/cdap; export CDAP_HOME
  DEFAULT_JVM_OPTS="-Xmx3072m -XX:MaxPermSize=128m"
 else
- DEFAULT_JVM_OPTS="-Xmx1024m -XX:MaxPermSize=128m"
+ DEFAULT_JVM_OPTS="-Xmx2048m -XX:MaxPermSize=128m"
 fi
 
 # Add default JVM options here. You can also use JAVA_OPTS and CDAP_OPTS to pass JVM options to this script.
@@ -72,7 +72,16 @@ SAVED="`pwd`"
 cd "`dirname \"$PRG\"`/.." >&-
 APP_HOME="`pwd -P`"
 
-CLASSPATH="$APP_HOME/lib/*":"$APP_HOME/conf/"
+i=0
+for jar in `ls -1 $APP_HOME/lib/* | sort` ; do
+    ((i++))
+    if [ $i -eq 1 ] ; then
+        CLASSPATH=${jar}
+    else
+        CLASSPATH=${CLASSPATH}:${jar}
+    fi
+done
+CLASSPATH="${CLASSPATH}:$APP_HOME/conf/"
 
 # Determine the Java command to use to start the JVM.
 if [ -n "$JAVA_HOME" ] ; then
