@@ -1,5 +1,5 @@
 angular.module(PKG.name + '.feature.hydrator')
-  .service('MyPipelineDetailTopPanelService', function(GLOBALS, myWorkFlowApi, myMapreduceApi, $state, myWorkersApi, $q, myAppsApi) {
+  .service('MyPipelineDetailActionService', function(GLOBALS, myWorkFlowApi, myMapreduceApi, $state, myWorkersApi, $q, myAppsApi) {
 
     var appLevelParams;
     var scheduleLevelParams;

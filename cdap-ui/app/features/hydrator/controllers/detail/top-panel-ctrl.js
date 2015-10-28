@@ -1,5 +1,5 @@
 angular.module(PKG.name + '.feature.hydrator')
-  .controller('HydratorDetailTopPanelController', function(MyPipelineDetailTopPanelService, rPipelineDetail, GLOBALS, $alert, $state) {
+  .controller('HydratorDetailTopPanelController', function(MyPipelineDetailActionService, rPipelineDetail, GLOBALS, $alert, $state) {
     this.runOnceLoading = false;
     this.app = rPipelineDetail;
     this.GLOBALS = GLOBALS;
@@ -8,7 +8,7 @@ angular.module(PKG.name + '.feature.hydrator')
       switch (action) {
         case 'Start':
           this.appStatus = 'STARTING';
-          MyPipelineDetailTopPanelService
+          MyPipelineDetailActionService
             .start()
             .then(
               function success(type) {
@@ -30,7 +30,7 @@ angular.module(PKG.name + '.feature.hydrator')
           break;
         case 'Stop':
           this.appStatus = 'STOPPING';
-          MyPipelineDetailTopPanelService
+          MyPipelineDetailActionService
             .stop()
             .then(
               function sucess(type) {
@@ -43,7 +43,7 @@ angular.module(PKG.name + '.feature.hydrator')
           break;
         case 'Run Once':
           this.runOnceLoading = true;
-          MyPipelineDetailTopPanelService
+          MyPipelineDetailActionService
             .start('once')
             .then(
               function success() {
@@ -60,7 +60,7 @@ angular.module(PKG.name + '.feature.hydrator')
             );
           break;
         case 'Delete':
-          MyPipelineDetailTopPanelService
+          MyPipelineDetailActionService
             .delete()
             .then(
               function success() {
@@ -78,7 +78,7 @@ angular.module(PKG.name + '.feature.hydrator')
       }
     };
 
-    MyPipelineDetailTopPanelService.registerForAppStatusChange(function(status) {
+    MyPipelineDetailActionService.registerForAppStatusChange(function(status) {
       this.appStatus = status;
     }.bind(this));
   });
