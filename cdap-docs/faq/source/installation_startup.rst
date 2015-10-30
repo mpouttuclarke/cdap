@@ -31,7 +31,9 @@ distribution. For example, this command will build the files required for a dist
    :dedent: 4
       
 It creates multiple output files (``tar.gz``\ ), located in the ``target`` directory
-inside each of ``cdap-master``, ``cdap-kafka``, ``cdap-gateway``, and ``cdap-ui``.
+inside each of ``cdap-master``, ``cdap-kafka``, ``cdap-gateway``, and ``cdap-ui``.  The
+``rpm`` and ``deb`` targets require that `fpm <https://github.com/jordansissel/fpm>`__ be
+installed.
 
 To build an SDK (suitable for Macintosh OS X, Windows, or Linux), use:
 
@@ -46,10 +48,10 @@ Installation
 
 How do I install CDAP on CDH using Cloudera Manager?
 ----------------------------------------------------
-We have a  :ref:`tutorial <step-by-step-cloudera-add-service>` with instructions on how to
-install CDAP on CDH (Cloudera). 
+We have a :ref:`tutorial <step-by-step-cloudera-add-service>` with instructions on how to
+install CDAP on CDH (Cloudera) using Cloudera Manager. 
 
-If, when you  try to start services, you receive an error in ``stderr`` such as::
+If, when you try to start services, you receive an error in ``stderr`` such as::
        
   Error found before invoking supervisord: No parcel provided required tags: set([u'cdap'])
 
@@ -64,16 +66,51 @@ parcel, *Activation*. There are 4 steps to installing a parcel:
 Start by clicking on the parcel icon (near the top-left corner of Cloudera Manager; looks
 like a gift-wrapped box), and ensure that the CDAP parcel is listed as *Active*.
 
+How do I install CDAP on CDH without using Cloudera Manager?
+------------------------------------------------------------
+If you have a CDH cluster not managed by Cloudera Manager, you can install CDAP by following
+the manual instructions. Note that per the Software Prerequisites, a configured Hadoop, HBase,
+and optionally Hive client need to be configured on the node(s) where CDAP will run.
 
-How do I install CDAP on HDP?
------------------------------
+How do I install CDAP on HDP using Ambari?
+------------------------------------------
 Instructions on installing CDAP on HDP using Apache Ambari :ref:`are available <ambari-configuring>`.
 
+How do I install CDAP on HDP without using Ambari?
+--------------------------------------------------
+If you have an HDP cluster not managed by Ambari, you can install CDAP by following
+the manual instructions. Note that per the Software Prerequisites, a configured Hadoop, HBase,
+and optionally Hive client need to be configured on the node(s) where CDAP will run.
+
+Note that HDP version 2.2 and above require some additional configuration <link>.
 
 How do I install CDAP on MapR?
 ------------------------------
-Follow the normal install
-One configuration:
+(perhaps this needs its own section in the docs to link to here)
+
+CDAP can be installed on a MapR cluster by following the manual instructions. Note that per the
+Software Prerequisites, a configured Hadoop, HBase, and optionally Hive client need to be
+configured on the node(s) where CDAP will run.
+
+To configure a MapR Hadoop client, see http://doc.mapr.com/display/MapR/Setting+Up+the+Client.
+
+To configure a MapR HBase client, see
+http://doc.mapr.com/display/MapR/Installing+HBase#InstallingHBase-HBaseonaClientInstallingHBaseonaClient
+
+To configure a Mapr Hive client, see http://doc.mapr.com/display/MapR/Installing+Hive
+
+A typical client node should have the mapr-client, mapr-hbase, and mapr-hive packages installed, and
+be configured using the mapr configure.sh utility.
+
+As in all installations, the kafka.log.dir may need to be created locally.
+
+MapR does not provide a configured ``yarn.application.classpath`` by default. CDAP requires an additional
+entry, ``/opt/mapr/lib/*`` be appended to the ``yarn.application.classpath`` setting in ``yarn-site.xml``.
+The default ``yarn.application.classpath`` for Linux with this additional entry appended is:
+
+$HADOOP_CONF_DIR, $HADOOP_COMMON_HOME/share/hadoop/common/*, $HADOOP_COMMON_HOME/share/hadoop/common/lib/*, $HADOOP_HDFS_HOME/share/hadoop/hdfs/*, $HADOOP_HDFS_HOME/share/hadoop/hdfs/lib/*, $HADOOP_YARN_HOME/share/hadoop/yarn/*, $HADOOP_YARN_HOME/share/hadoop/yarn/lib/*, $HADOOP_COMMON_HOME/share/hadoop/mapreduce/*, $HADOOP_COMMON_HOME/share/hadoop/mapreduce/lib/*, /opt/mapr/lib/*
+
+Note that MapR may not dereference the hadoop variables ($HADOOP_CONF_DIR, etc), so we recommend specifying their full paths.
 
 
 How do I install CDAP on Apache Hadoop?
@@ -114,9 +151,16 @@ TBC.
 
 CDAP UI shows a message "namespace cannot be found"
 ---------------------------------------------------
-TBC.
+This is indicative that the UI cannot connect to the CDAP system service containers running in
+YARN.
 
+First check if the CDAP Master service container shows as RUNNING in the YARN ResourceManager UI (link to entry below)
 
+If this doesn't resolve the issue, then it means the CDAP system services are unable to launch.  Ensure YARN has enough
+spare memory and vcore capacity.  CDAP attempts to launch between 8 - 11 containers depending on configuration. Check
+the master container (Application Master) logs to see if it is able to launch all containers.
+
+If it is able to launch all containers, then you may need to further check the launched container logs for any errors.
 
 CDAP UI shows a session time out
 --------------------------------
@@ -126,13 +170,16 @@ TBC.
 
 I don't see the CDAP Master service on YARN
 -------------------------------------------
-TBC.
-
+Ensure the node where CDAP is running has a properly configured YARN client.
+Ensure YARN has enough memory and vcore capacity.
 
 
 CDAP Master log shows permissions issues
 ----------------------------------------
-TBC.
+Ensure that hdfs:///#{hdfs.namespace} and hdfs:///user/#{hdfs.user} exist and are owned by #{hdfs.user}.
+In rare cases, until CDAP-3817 is resolved, ensure hdfs:///#{hdfs.namespace}/tx.snapshot exists and is
+owned by #{hdfs.user}. In any other case, the error should show which directory it is attempting to
+access. Don't hesitate to ask for help <link>
 
 
 
@@ -157,13 +204,14 @@ not be able to communicate with each other, and you'll see error messages such a
 
 Where is the CDAP CLI (Command Line Interface)?
 -----------------------------------------------
-If you've installed the ``cdap-cli`` RPM, it's located under ``/opt/cdap/cli/bin``.
+If you've installed the ``cdap-cli`` RPM or Deb, it's located under ``/opt/cdap/cli/bin``.
 You can add this location to your PATH to prevent the need for specifying the entire script every time.
 
-**Note:** This command will list the contents of the package ``cdap-cli``, once it has
+**Note:** These commands will list the contents of the package ``cdap-cli``, once it has
 been installed::
 
   rpm -ql cdap-cli
+  dpkg -L cdap-cli
 
 What are the memory and core requirements for CDAP?
 ---------------------------------------------------
@@ -207,7 +255,7 @@ configuration.
 
 My Hive Server2 defaults to 10000; what should I do?
 ----------------------------------------------------
-If port 10000 is being used by another service, simply change ``router.server.port`` in
+If port 10000 is being used by another service, simply change ``router.bind.port`` in
 the ``cdap-site.xml`` to another available port. Since in the Hadoop ecosystem, Hive
 Server2 defaults to 10000, we are considering changing the router default port. 
        
