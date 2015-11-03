@@ -79,8 +79,8 @@ There are two ways to use a dataset in a program:
       void process(String key) {
         counters.increment(key.getBytes(), 1L);
       }
-
-  ..
+      
+..
   
   When starting the program, the runtime system reads the dataset specification from the metadata store and injects
   an instance of the dataset class into the application. This dataset will participate in every transaction that is
