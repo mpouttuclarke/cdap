@@ -245,6 +245,10 @@ public abstract class QueueTest {
       }
 
       @Override
+      public void updateTx(Transaction transaction) {
+      }
+
+      @Override
       public Collection<byte[]> getTxChanges() {
         return ImmutableList.of();
       }

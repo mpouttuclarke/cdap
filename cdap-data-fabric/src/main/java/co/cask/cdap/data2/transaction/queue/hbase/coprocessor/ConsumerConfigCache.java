@@ -23,6 +23,7 @@ import co.cask.tephra.Transaction;
 import co.cask.tephra.TransactionCodec;
 import co.cask.tephra.TxConstants;
 import co.cask.tephra.persist.TransactionSnapshot;
+import co.cask.tephra.persist.TransactionVisibilityState;
 import co.cask.tephra.util.TxUtils;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Supplier;
@@ -63,7 +64,7 @@ public class ConsumerConfigCache {
   private final byte[] queueConfigTableName;
   private final Configuration hConf;
   private final CConfigurationReader cConfReader;
-  private final Supplier<TransactionSnapshot> transactionSnapshotSupplier;
+  private final Supplier<TransactionVisibilityState> transactionSnapshotSupplier;
   private final TransactionCodec txCodec;
 
   private Thread refreshThread;
@@ -80,10 +81,10 @@ public class ConsumerConfigCache {
    * @param hConf configuration for HBase
    * @param queueConfigTableName table name that stores queue configuration
    * @param cConfReader reader to read the latest {@link CConfiguration}
-   * @param transactionSnapshotSupplier A supplier for the latest {@link TransactionSnapshot}
+   * @param transactionSnapshotSupplier A supplier for the latest {@link TransactionVisibilityState}
    */
-  ConsumerConfigCache(Configuration hConf, byte[] queueConfigTableName,
-                      CConfigurationReader cConfReader, Supplier<TransactionSnapshot> transactionSnapshotSupplier) {
+  ConsumerConfigCache(Configuration hConf, byte[] queueConfigTableName, CConfigurationReader cConfReader,
+                      Supplier<TransactionVisibilityState> transactionSnapshotSupplier) {
     this.hConf = hConf;
     this.queueConfigTableName = queueConfigTableName;
     this.cConfReader = cConfReader;
@@ -136,7 +137,7 @@ public class ConsumerConfigCache {
   public synchronized void updateCache() throws IOException {
     Map<byte[], QueueConsumerConfig> newCache = Maps.newTreeMap(Bytes.BYTES_COMPARATOR);
     long now = System.currentTimeMillis();
-    TransactionSnapshot txSnapshot = transactionSnapshotSupplier.get();
+    TransactionVisibilityState txSnapshot = transactionSnapshotSupplier.get();
     if (txSnapshot == null) {
       LOG.debug("No transaction snapshot is available. Not updating the consumer config cache.");
       return;
@@ -234,7 +235,7 @@ public class ConsumerConfigCache {
 
   public static ConsumerConfigCache getInstance(Configuration hConf, byte[] tableName,
                                                 CConfigurationReader cConfReader,
-                                                Supplier<TransactionSnapshot> txSnapshotSupplier) {
+                                                Supplier<TransactionVisibilityState> txSnapshotSupplier) {
     ConsumerConfigCache cache = INSTANCES.get(tableName);
     if (cache == null) {
       cache = new ConsumerConfigCache(hConf, tableName, cConfReader, txSnapshotSupplier);
