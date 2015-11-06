@@ -152,7 +152,7 @@ public class AppMetadataStore extends MetadataStoreDataset {
   }
 
   public void recordProgramStart(Id.Program program, String pid, long startTs, String twillRunId,
-                                 Map<String, String> runtimeArgs) {
+                                 Map<String, String> runtimeArgs, Map<String, String> systemArgs) {
     MDSKey key = new MDSKey.Builder()
       .add(TYPE_RUN_RECORD_STARTED)
       .add(program.getNamespaceId())
@@ -164,8 +164,10 @@ public class AppMetadataStore extends MetadataStoreDataset {
 
 
     write(key, new RunRecordMeta(pid, startTs, null, ProgramRunStatus.RUNNING,
-      ImmutableMap.of("runtimeArgs",
-        GSON.toJson(runtimeArgs, MAP_STRING_STRING_TYPE)), twillRunId));
+                                 ImmutableMap.of(
+                                   "runtimeArgs", GSON.toJson(runtimeArgs, MAP_STRING_STRING_TYPE)),
+                                 systemArgs,
+                                 twillRunId));
   }
 
   public void recordProgramSuspend(Id.Program program, String pid) {
@@ -282,11 +284,6 @@ public class AppMetadataStore extends MetadataStoreDataset {
     } else {
       return getHistoricalRuns(program, status, startTime, endTime, limit, filter);
     }
-  }
-
-  public List<RunRecordMeta> getRuns(@Nullable Id.Program program, ProgramRunStatus status,
-                                     long startTime, long endTime, int limit) {
-    return getRuns(program, status, startTime, endTime, limit, null);
   }
 
   // TODO: getRun is duplicated in cdap-watchdog AppMetadataStore class.
@@ -557,8 +554,7 @@ public class AppMetadataStore extends MetadataStoreDataset {
     Map<String, String> properties = record.getProperties();
     properties.put(workflowNodeId, programRunId);
 
-    write(key, new RunRecordMeta(record.getPid(), record.getStartTs(), null, ProgramRunStatus.RUNNING,
-                                 properties, record.getTwillRunId()));
+    write(key, new RunRecordMeta(record, properties));
 
     // Record the program start
     key = new MDSKey.Builder()
@@ -571,7 +567,7 @@ public class AppMetadataStore extends MetadataStoreDataset {
       .build();
 
     write(key, new RunRecordMeta(programRunId, startTimeInSeconds, null, ProgramRunStatus.RUNNING,
-                                 ImmutableMap.of("workflowrunid", workflowRunId), twillRunId));
+                                 ImmutableMap.of("workflowrunid", workflowRunId), null, twillRunId));
   }
 
   public void updateWorkflowToken(Id.Workflow workflowId, String workflowRunId,
